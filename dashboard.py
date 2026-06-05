@@ -8,6 +8,7 @@ import streamlit as st
 
 from backtest import RSIStrategy, STRATEGY_CLASSES, run_rsi_parameter_sweep, run_strategy_backtest, run_strategy_comparison
 from main import DB_PATH, load_prices, run_pipeline
+from paper_trading import run_paper_trading_simulation
 
 
 st.set_page_config(page_title="Stock Data Pipeline", layout="wide")
@@ -145,6 +146,41 @@ else:
     display_sweep["total_profit"] = display_sweep["total_profit"].round(2)
     display_sweep["sharpe_ratio"] = display_sweep["sharpe_ratio"].round(2)
     st.dataframe(display_sweep, width="stretch")
+
+st.subheader("Paper Trading Simulator")
+with st.container():
+    paper_cols = st.columns(2)
+    paper_cash = paper_cols[0].number_input("Paper Cash", min_value=100.0, value=10_000.0, step=500.0)
+    allocation = paper_cols[1].slider("Allocation Per Trade", min_value=0.05, max_value=1.0, value=1.0, step=0.05)
+
+try:
+    simulation = run_paper_trading_simulation(
+        {ticker: load_prices(ticker) for ticker in selected_tickers or [selected_ticker]},
+        selected_strategy,
+        initial_cash=paper_cash,
+        allocation_per_trade=allocation,
+    )
+except ValueError as error:
+    st.warning(str(error))
+else:
+    paper_metric_cols = st.columns(5)
+    paper_metric_cols[0].metric("Cash", f"${simulation.portfolio.cash:,.2f}")
+    paper_metric_cols[1].metric("Positions", f"${simulation.portfolio.positions_value:,.2f}")
+    paper_metric_cols[2].metric("Portfolio Value", f"${simulation.portfolio.value:,.2f}")
+    paper_metric_cols[3].metric("Realized P&L", f"${simulation.portfolio.realized_pnl:,.2f}")
+    paper_metric_cols[4].metric("Unrealized P&L", f"${simulation.portfolio.unrealized_pnl:,.2f}")
+
+    if not simulation.equity_curve.empty:
+        st.line_chart(simulation.equity_curve.set_index("date")[["portfolio_value", "cash", "positions_value"]], height=320)
+    if simulation.trades.empty:
+        st.info("No paper trades generated for this strategy and ticker set.")
+    else:
+        st.dataframe(simulation.trades.sort_values("date", ascending=False), width="stretch")
+    if simulation.positions.empty:
+        st.info("No open positions at the end of the simulation.")
+    else:
+        st.subheader("Open Positions")
+        st.dataframe(simulation.positions, width="stretch")
 
 st.subheader("Stored Rows")
 st.dataframe(data.sort_values("date", ascending=False), width="stretch")

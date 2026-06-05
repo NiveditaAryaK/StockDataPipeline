@@ -73,6 +73,23 @@ Results are saved to:
 - `research_results/strategy_results.csv`
 - `research_results/strategy_results.sqlite`
 
+## Paper Trading Simulator
+
+The dashboard includes a historical paper trading simulator:
+
+```text
+Market Feed -> Strategy Engine -> Paper Broker -> Portfolio -> Dashboard
+```
+
+It tracks:
+
+- Cash balance
+- Open positions
+- Trade execution
+- Portfolio value
+- Realized P&L
+- Unrealized P&L
+
 ## Backtest Metrics
 
 - Total profit
