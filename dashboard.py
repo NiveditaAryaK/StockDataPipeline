@@ -6,9 +6,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from backtest import RSIStrategy, STRATEGY_CLASSES, run_rsi_parameter_sweep, run_strategy_backtest, run_strategy_comparison
+from backtest import run_rsi_parameter_sweep, run_strategy_backtest, run_strategy_comparison
 from main import DB_PATH, load_prices, run_pipeline
 from paper_trading import run_paper_trading_simulation
+from strategies import STRATEGY_LABELS, build_strategy
 
 
 st.set_page_config(page_title="Stock Data Pipeline", layout="wide")
@@ -85,16 +86,10 @@ st.bar_chart(data.set_index("date")["daily_return"])
 
 st.subheader("Strategy Backtest")
 with st.container():
-    strategy_labels = {
-        "rsi": "RSI",
-        "ma": "MA 5/20 Crossover",
-        "momentum": "Momentum",
-        "bollinger": "Bollinger Bands",
-    }
     strategy_key = st.selectbox(
         "Strategy",
-        list(strategy_labels),
-        format_func=lambda key: strategy_labels[key],
+        list(STRATEGY_LABELS),
+        format_func=lambda key: STRATEGY_LABELS[key],
     )
     col_a, col_b, col_c = st.columns(3)
     initial_cash = col_a.number_input("Initial Cash", min_value=100.0, value=10_000.0, step=500.0)
@@ -102,10 +97,7 @@ with st.container():
     sell_rsi = col_c.number_input("Sell RSI", min_value=1.0, max_value=99.0, value=70.0, step=1.0)
 
 try:
-    if strategy_key == "rsi":
-        selected_strategy = RSIStrategy(buy_rsi, sell_rsi)
-    else:
-        selected_strategy = STRATEGY_CLASSES[strategy_key]()
+    selected_strategy = build_strategy(strategy_key, buy_rsi, sell_rsi)
     result = run_strategy_backtest(data, selected_ticker, selected_strategy, initial_cash)
 except ValueError as error:
     st.warning(str(error))

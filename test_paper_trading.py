@@ -4,8 +4,8 @@ import unittest
 
 import pandas as pd
 
-from backtest import RSIStrategy
 from paper_trading import Portfolio, run_paper_trading_simulation
+from strategies import RSIStrategy
 
 
 class PaperTradingTests(unittest.TestCase):

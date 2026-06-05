@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from backtest import Strategy
+from strategies import Strategy
 
 
 @dataclass

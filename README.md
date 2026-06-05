@@ -104,7 +104,7 @@ It tracks:
 
 ## Strategy Classes
 
-Strategies implement:
+Strategy classes live in `strategies.py` and implement:
 
 ```python
 class Strategy:
@@ -122,6 +122,15 @@ Current registered strategies:
 The backtest engine is shared. A strategy only needs to generate `BUY`, `SELL`, or `HOLD` signals.
 
 The Bollinger strategy is mean-reversion based: it buys below the lower band and sells when price recovers above the middle band.
+
+## Module Layout
+
+- `main.py`: market data download, indicators, SQLite persistence
+- `strategies.py`: reusable strategy classes and strategy registry
+- `backtest.py`: backtest engine, metrics, CLI
+- `research.py`: 5-year and 10-year batch research runner
+- `paper_trading.py`: market feed, strategy engine, paper broker, portfolio
+- `dashboard.py`: Streamlit dashboard
 
 ## Indicators
 

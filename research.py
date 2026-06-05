@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest import BollingerBandStrategy, MACrossoverStrategy, MomentumStrategy, RSIStrategy, buy_hold_return, run_strategy_backtest
+from backtest import buy_hold_return, run_strategy_backtest
 from main import DB_PATH, load_prices, run_pipeline
+from strategies import BollingerBandStrategy, MACrossoverStrategy, MomentumStrategy, RSIStrategy
 
 RESULTS_DIR = Path("research_results")
 RESULTS_CSV = RESULTS_DIR / "strategy_results.csv"
