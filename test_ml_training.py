@@ -61,12 +61,22 @@ class MLTrainingTests(unittest.TestCase):
         self.assertTrue(0 <= result.f1 <= 1)
         self.assertTrue(0 <= result.actual_up_rate <= 1)
         self.assertTrue(0 <= result.predicted_up_rate <= 1)
+        self.assertTrue(0 <= result.probability_min <= result.probability_max <= 1)
+        self.assertTrue(0 <= result.probability_avg <= 1)
+        self.assertAlmostEqual(
+            result.buy_signal_rate + result.hold_signal_rate + result.sell_signal_rate,
+            1.0,
+        )
         self.assertTrue(0 <= result.latest_probability_up <= 1)
         self.assertIn(result.latest_signal, {"BUY", "SELL", "HOLD"})
         self.assertIn("probability_up", result.predictions.columns)
         self.assertIn("predicted_up", result.predictions.columns)
         self.assertIn("feature", result.feature_importance.columns)
         self.assertFalse(result.feature_importance.empty)
+        self.assertIn("threshold", result.threshold_sweep.columns)
+        self.assertIn("buy_win_rate", result.threshold_sweep.columns)
+        self.assertIn("sell_win_rate", result.threshold_sweep.columns)
+        self.assertFalse(result.threshold_sweep.empty)
 
     def test_train_random_forest_returns_metrics_and_importance(self) -> None:
         dataset = make_training_dataset()
@@ -77,11 +87,21 @@ class MLTrainingTests(unittest.TestCase):
         self.assertTrue(0 <= result.accuracy <= 1)
         self.assertTrue(0 <= result.actual_up_rate <= 1)
         self.assertTrue(0 <= result.predicted_up_rate <= 1)
+        self.assertTrue(0 <= result.probability_min <= result.probability_max <= 1)
+        self.assertTrue(0 <= result.probability_avg <= 1)
+        self.assertAlmostEqual(
+            result.buy_signal_rate + result.hold_signal_rate + result.sell_signal_rate,
+            1.0,
+        )
         self.assertTrue(0 <= result.latest_probability_up <= 1)
         self.assertIn("probability_up", result.predictions.columns)
         self.assertIn("feature", result.feature_importance.columns)
         self.assertIn("importance", result.feature_importance.columns)
         self.assertFalse(result.feature_importance.empty)
+        self.assertIn("threshold", result.threshold_sweep.columns)
+        self.assertIn("buy_win_rate", result.threshold_sweep.columns)
+        self.assertIn("sell_win_rate", result.threshold_sweep.columns)
+        self.assertFalse(result.threshold_sweep.empty)
 
     def test_model_trainers_exposes_supported_models(self) -> None:
         self.assertIn("logistic", MODEL_TRAINERS)

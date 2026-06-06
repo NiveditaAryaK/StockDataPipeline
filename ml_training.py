@@ -32,10 +32,19 @@ class MLTrainingResult:
     auc_roc: float | None
     actual_up_rate: float
     predicted_up_rate: float
+    probability_min: float
+    probability_25pct: float
+    probability_avg: float
+    probability_75pct: float
+    probability_max: float
+    buy_signal_rate: float
+    hold_signal_rate: float
+    sell_signal_rate: float
     latest_probability_up: float
     latest_signal: str
     predictions: pd.DataFrame
     feature_importance: pd.DataFrame
+    threshold_sweep: pd.DataFrame
     pipeline: Pipeline
 
 
@@ -165,8 +174,11 @@ def train_classifier(
     predictions["signal"] = predictions["probability_up"].apply(
         lambda probability: probability_to_signal(float(probability), buy_threshold, sell_threshold)
     )
+    signal_rates = predictions["signal"].value_counts(normalize=True)
 
     feature_importance = build_feature_importance(pipeline, features)
+    probability_summary = pd.Series(probabilities_up).quantile([0, 0.25, 0.75, 1])
+    threshold_sweep = build_threshold_sweep(probabilities_up, y_test)
 
     return MLTrainingResult(
         ticker=ticker.upper(),
@@ -184,10 +196,19 @@ def train_classifier(
         auc_roc=auc_roc,
         actual_up_rate=float(y_test.mean()),
         predicted_up_rate=float(predicted.mean()),
+        probability_min=float(probability_summary.loc[0]),
+        probability_25pct=float(probability_summary.loc[0.25]),
+        probability_avg=float(probabilities_up.mean()),
+        probability_75pct=float(probability_summary.loc[0.75]),
+        probability_max=float(probability_summary.loc[1]),
+        buy_signal_rate=float(signal_rates.get("BUY", 0)),
+        hold_signal_rate=float(signal_rates.get("HOLD", 0)),
+        sell_signal_rate=float(signal_rates.get("SELL", 0)),
         latest_probability_up=latest_probability_up,
         latest_signal=latest_signal,
         predictions=predictions,
         feature_importance=feature_importance,
+        threshold_sweep=threshold_sweep,
         pipeline=pipeline,
     )
 
@@ -213,6 +234,33 @@ def build_feature_importance(pipeline: Pipeline, features: list[str]) -> pd.Data
         ).sort_values("importance", ascending=False, ignore_index=True)
 
     return pd.DataFrame({"feature": features, "importance": [0.0] * len(features)})
+
+
+def build_threshold_sweep(
+    probabilities_up,
+    actual_up: pd.Series,
+    thresholds: tuple[float, ...] = (0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60),
+) -> pd.DataFrame:
+    actual = actual_up.reset_index(drop=True)
+    probabilities = pd.Series(probabilities_up)
+    rows = []
+    for threshold in thresholds:
+        buy_mask = probabilities >= threshold
+        sell_mask = probabilities <= threshold
+        buy_count = int(buy_mask.sum())
+        sell_count = int(sell_mask.sum())
+        rows.append(
+            {
+                "threshold": threshold,
+                "buy_count": buy_count,
+                "buy_rate": buy_count / len(probabilities),
+                "buy_win_rate": float(actual[buy_mask].mean()) if buy_count else None,
+                "sell_count": sell_count,
+                "sell_rate": sell_count / len(probabilities),
+                "sell_win_rate": float((1 - actual[sell_mask]).mean()) if sell_count else None,
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 MODEL_TRAINERS = {
@@ -261,7 +309,30 @@ if __name__ == "__main__":
         print("AUC ROC:   unavailable")
     print(f"Actual Up Rate:    {result.actual_up_rate:.2%}")
     print(f"Predicted Up Rate: {result.predicted_up_rate:.2%}")
+    print("\nProbability Up Distribution:")
+    print(f"Min:     {result.probability_min:.2%}")
+    print(f"25%:     {result.probability_25pct:.2%}")
+    print(f"Average: {result.probability_avg:.2%}")
+    print(f"75%:     {result.probability_75pct:.2%}")
+    print(f"Max:     {result.probability_max:.2%}")
+    print("\nThreshold Signal Mix:")
+    print(f"BUY >= threshold:  {result.buy_signal_rate:.2%}")
+    print(f"HOLD:              {result.hold_signal_rate:.2%}")
+    print(f"SELL <= threshold: {result.sell_signal_rate:.2%}")
     print(f"Latest Probability Up: {result.latest_probability_up:.2%}")
     print(f"Latest Signal: {result.latest_signal}")
+    print("\nThreshold Sweep:")
+    print(
+        result.threshold_sweep.to_string(
+            index=False,
+            formatters={
+                "threshold": "{:.0%}".format,
+                "buy_rate": "{:.2%}".format,
+                "buy_win_rate": lambda value: "n/a" if pd.isna(value) else f"{value:.2%}",
+                "sell_rate": "{:.2%}".format,
+                "sell_win_rate": lambda value: "n/a" if pd.isna(value) else f"{value:.2%}",
+            },
+        )
+    )
     print("\nTop feature importance:")
     print(result.feature_importance.head(10).to_string(index=False))
