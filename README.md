@@ -135,10 +135,18 @@ Current feature set:
 Phase 2 trains the first baseline model:
 
 ```bash
-python ml_training.py AAPL --test-size 0.2
+python ml_training.py AAPL --model logistic --test-size 0.2
 ```
 
 This uses Logistic Regression with a chronological split. The older rows are used for training and the newest rows are kept as unseen test data.
+
+Train the first non-linear model:
+
+```bash
+python ml_training.py AAPL --model random_forest --test-size 0.2
+```
+
+Random Forest can learn interaction effects between indicators, such as momentum behaving differently during high-volatility periods.
 
 Current ML metrics:
 

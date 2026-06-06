@@ -5,7 +5,13 @@ import unittest
 import pandas as pd
 
 from ml_dataset import build_ml_dataset
-from ml_training import chronological_split, probability_to_signal, train_logistic_regression
+from ml_training import (
+    MODEL_TRAINERS,
+    chronological_split,
+    probability_to_signal,
+    train_logistic_regression,
+    train_random_forest,
+)
 
 
 def make_training_dataset(rows: int = 120) -> pd.DataFrame:
@@ -53,12 +59,33 @@ class MLTrainingTests(unittest.TestCase):
         self.assertTrue(0 <= result.precision <= 1)
         self.assertTrue(0 <= result.recall <= 1)
         self.assertTrue(0 <= result.f1 <= 1)
+        self.assertTrue(0 <= result.actual_up_rate <= 1)
+        self.assertTrue(0 <= result.predicted_up_rate <= 1)
         self.assertTrue(0 <= result.latest_probability_up <= 1)
         self.assertIn(result.latest_signal, {"BUY", "SELL", "HOLD"})
         self.assertIn("probability_up", result.predictions.columns)
         self.assertIn("predicted_up", result.predictions.columns)
         self.assertIn("feature", result.feature_importance.columns)
         self.assertFalse(result.feature_importance.empty)
+
+    def test_train_random_forest_returns_metrics_and_importance(self) -> None:
+        dataset = make_training_dataset()
+
+        result = train_random_forest(dataset, "TEST", test_size=0.25)
+
+        self.assertEqual(result.model_name, "Random Forest")
+        self.assertTrue(0 <= result.accuracy <= 1)
+        self.assertTrue(0 <= result.actual_up_rate <= 1)
+        self.assertTrue(0 <= result.predicted_up_rate <= 1)
+        self.assertTrue(0 <= result.latest_probability_up <= 1)
+        self.assertIn("probability_up", result.predictions.columns)
+        self.assertIn("feature", result.feature_importance.columns)
+        self.assertIn("importance", result.feature_importance.columns)
+        self.assertFalse(result.feature_importance.empty)
+
+    def test_model_trainers_exposes_supported_models(self) -> None:
+        self.assertIn("logistic", MODEL_TRAINERS)
+        self.assertIn("random_forest", MODEL_TRAINERS)
 
 
 if __name__ == "__main__":

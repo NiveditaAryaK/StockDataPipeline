@@ -8,6 +8,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 
 from main import DB_PATH
@@ -29,6 +30,8 @@ class MLTrainingResult:
     recall: float
     f1: float
     auc_roc: float | None
+    actual_up_rate: float
+    predicted_up_rate: float
     latest_probability_up: float
     latest_signal: str
     predictions: pd.DataFrame
@@ -70,6 +73,67 @@ def train_logistic_regression(
     buy_threshold: float = 0.55,
     sell_threshold: float = 0.45,
 ) -> MLTrainingResult:
+    pipeline = Pipeline(
+        steps=[
+            ("scaler", StandardScaler()),
+            ("model", LogisticRegression(max_iter=1000)),
+        ]
+    )
+    return train_classifier(
+        dataset=dataset,
+        ticker=ticker,
+        model_name="Logistic Regression",
+        pipeline=pipeline,
+        feature_columns=feature_columns,
+        test_size=test_size,
+        buy_threshold=buy_threshold,
+        sell_threshold=sell_threshold,
+    )
+
+
+def train_random_forest(
+    dataset: pd.DataFrame,
+    ticker: str,
+    feature_columns: list[str] | None = None,
+    test_size: float = 0.2,
+    buy_threshold: float = 0.55,
+    sell_threshold: float = 0.45,
+) -> MLTrainingResult:
+    pipeline = Pipeline(
+        steps=[
+            (
+                "model",
+                RandomForestClassifier(
+                    n_estimators=300,
+                    min_samples_leaf=5,
+                    random_state=42,
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+    )
+    return train_classifier(
+        dataset=dataset,
+        ticker=ticker,
+        model_name="Random Forest",
+        pipeline=pipeline,
+        feature_columns=feature_columns,
+        test_size=test_size,
+        buy_threshold=buy_threshold,
+        sell_threshold=sell_threshold,
+    )
+
+
+def train_classifier(
+    dataset: pd.DataFrame,
+    ticker: str,
+    model_name: str,
+    pipeline: Pipeline,
+    feature_columns: list[str] | None = None,
+    test_size: float = 0.2,
+    buy_threshold: float = 0.55,
+    sell_threshold: float = 0.45,
+) -> MLTrainingResult:
     features = feature_columns or FEATURE_COLUMNS
     missing_columns = [column for column in features + ["date", "target_up"] if column not in dataset.columns]
     if missing_columns:
@@ -78,13 +142,6 @@ def train_logistic_regression(
     train_df, test_df = chronological_split(dataset, test_size)
     if train_df["target_up"].nunique() < 2:
         raise ValueError("Training data needs both up and down examples.")
-
-    pipeline = Pipeline(
-        steps=[
-            ("scaler", StandardScaler()),
-            ("model", LogisticRegression(max_iter=1000)),
-        ]
-    )
 
     x_train = train_df[features]
     y_train = train_df["target_up"]
@@ -109,19 +166,11 @@ def train_logistic_regression(
         lambda probability: probability_to_signal(float(probability), buy_threshold, sell_threshold)
     )
 
-    model = pipeline.named_steps["model"]
-    coefficients = model.coef_[0]
-    feature_importance = pd.DataFrame(
-        {
-            "feature": features,
-            "coefficient": coefficients,
-            "importance": abs(coefficients),
-        }
-    ).sort_values("importance", ascending=False, ignore_index=True)
+    feature_importance = build_feature_importance(pipeline, features)
 
     return MLTrainingResult(
         ticker=ticker.upper(),
-        model_name="Logistic Regression",
+        model_name=model_name,
         train_rows=len(train_df),
         test_rows=len(test_df),
         train_start=pd.to_datetime(train_df["date"].iloc[0]),
@@ -133,6 +182,8 @@ def train_logistic_regression(
         recall=float(recall_score(y_test, predicted, zero_division=0)),
         f1=float(f1_score(y_test, predicted, zero_division=0)),
         auc_roc=auc_roc,
+        actual_up_rate=float(y_test.mean()),
+        predicted_up_rate=float(predicted.mean()),
         latest_probability_up=latest_probability_up,
         latest_signal=latest_signal,
         predictions=predictions,
@@ -141,9 +192,44 @@ def train_logistic_regression(
     )
 
 
+def build_feature_importance(pipeline: Pipeline, features: list[str]) -> pd.DataFrame:
+    model = pipeline.named_steps["model"]
+    if hasattr(model, "coef_"):
+        coefficients = model.coef_[0]
+        return pd.DataFrame(
+            {
+                "feature": features,
+                "coefficient": coefficients,
+                "importance": abs(coefficients),
+            }
+        ).sort_values("importance", ascending=False, ignore_index=True)
+
+    if hasattr(model, "feature_importances_"):
+        return pd.DataFrame(
+            {
+                "feature": features,
+                "importance": model.feature_importances_,
+            }
+        ).sort_values("importance", ascending=False, ignore_index=True)
+
+    return pd.DataFrame({"feature": features, "importance": [0.0] * len(features)})
+
+
+MODEL_TRAINERS = {
+    "logistic": train_logistic_regression,
+    "random_forest": train_random_forest,
+}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train ML models for next-day stock direction prediction.")
     parser.add_argument("ticker", help="Ticker symbol, for example: AAPL")
+    parser.add_argument(
+        "--model",
+        choices=sorted(MODEL_TRAINERS),
+        default="logistic",
+        help="ML model to train",
+    )
     parser.add_argument("--db", type=Path, default=DB_PATH, help="SQLite market data path")
     parser.add_argument("--test-size", type=float, default=0.2, help="Future holdout share, for example 0.2")
     parser.add_argument("--buy-threshold", type=float, default=0.55, help="Probability needed for a BUY signal")
@@ -154,7 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
 if __name__ == "__main__":
     args = build_parser().parse_args()
     ml_dataset = build_dataset_for_ticker(args.ticker, args.db)
-    result = train_logistic_regression(
+    result = MODEL_TRAINERS[args.model](
         ml_dataset,
         args.ticker,
         test_size=args.test_size,
@@ -173,6 +259,8 @@ if __name__ == "__main__":
         print(f"AUC ROC:   {result.auc_roc:.3f}")
     else:
         print("AUC ROC:   unavailable")
+    print(f"Actual Up Rate:    {result.actual_up_rate:.2%}")
+    print(f"Predicted Up Rate: {result.predicted_up_rate:.2%}")
     print(f"Latest Probability Up: {result.latest_probability_up:.2%}")
     print(f"Latest Signal: {result.latest_signal}")
     print("\nTop feature importance:")
