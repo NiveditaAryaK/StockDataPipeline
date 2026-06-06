@@ -113,6 +113,25 @@ Tables:
 - `experiments`
 - `experiment_results`
 
+## ML Prediction Engine
+
+Phase 1 builds a supervised-learning dataset for predicting whether tomorrow's close is higher than today's close:
+
+```bash
+python ml_dataset.py AAPL --output research_results/aapl_ml_dataset.csv
+```
+
+Current feature set:
+
+- OHLCV
+- MA5, MA20, RSI14, daily return
+- Momentum 5D, momentum 10D
+- Volatility 10D, volatility 20D
+- MA ratio
+- Price distance from MA20
+- RSI change
+- Volume change
+
 ## Backtest Metrics
 
 - Total profit
@@ -153,6 +172,7 @@ The Bollinger strategy is mean-reversion based: it buys below the lower band and
 - `backtest.py`: backtest engine, metrics, CLI
 - `research.py`: 5-year and 10-year batch research runner
 - `research_agent.py`: automated strategy generation, evaluation, and ranking
+- `ml_dataset.py`: ML feature and target dataset builder
 - `paper_trading.py`: market feed, strategy engine, paper broker, portfolio
 - `dashboard.py`: Streamlit dashboard
 
