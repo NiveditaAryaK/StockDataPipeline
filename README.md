@@ -104,6 +104,8 @@ The agent:
 Strategy Generator -> Backtest Engine -> Metrics Analyzer -> Strategy Ranking
 ```
 
+It starts with a broad family scan, then generates variations around the best-performing candidates. For example, if `Momentum 20D` wins the seed scan, it will test shorter and longer momentum lookbacks next.
+
 It saves experiments and results to `data/agent_research.sqlite`.
 
 Tables:

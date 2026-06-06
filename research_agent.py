@@ -22,6 +22,7 @@ class StrategyCandidate:
     strategy_name: str
     parameters: dict[str, float | int | str]
     strategy: Strategy
+    rationale: str = "seed candidate"
 
 
 @dataclass(frozen=True)
@@ -32,47 +33,92 @@ class AgentRunResult:
 
 class StrategyGenerator:
     def generate(self) -> list[StrategyCandidate]:
-        candidates: list[StrategyCandidate] = []
-        for buy_rsi, sell_rsi in [(20, 80), (25, 75), (30, 70), (35, 65), (40, 60)]:
-            candidates.append(
-                StrategyCandidate(
-                    strategy_id=f"rsi_{buy_rsi}_{sell_rsi}",
-                    strategy_name=f"RSI {buy_rsi}/{sell_rsi}",
-                    parameters={"buy_rsi": buy_rsi, "sell_rsi": sell_rsi},
-                    strategy=RSIStrategy(buy_rsi, sell_rsi),
-                )
-            )
+        return self.seed_candidates()
 
-        candidates.append(
-            StrategyCandidate(
-                strategy_id="ma_5_20",
-                strategy_name="MA 5/20 Crossover",
-                parameters={"fast_ma": 5, "slow_ma": 20},
-                strategy=MACrossoverStrategy(),
-            )
+    def seed_candidates(self) -> list[StrategyCandidate]:
+        return [
+            self.rsi_candidate(30, 70, "broad family scan"),
+            self.ma_candidate(5, 20, "broad family scan"),
+            self.momentum_candidate(20, "broad family scan"),
+            self.bollinger_candidate(20, 2, "broad family scan"),
+        ]
+
+    def variations(self, best: StrategyCandidate, existing_ids: set[str]) -> list[StrategyCandidate]:
+        parameters = best.parameters
+        candidates: list[StrategyCandidate] = []
+        if "lookback_days" in parameters:
+            lookback = int(parameters["lookback_days"])
+            for candidate_lookback in sorted({max(3, lookback + delta) for delta in [-10, -5, -2, 2, 5, 10]}):
+                candidates.append(self.momentum_candidate(candidate_lookback, f"explore around {best.strategy_name}"))
+        elif "buy_rsi" in parameters:
+            buy_rsi = int(parameters["buy_rsi"])
+            sell_rsi = int(parameters["sell_rsi"])
+            for candidate_buy, candidate_sell in {
+                (max(5, buy_rsi - 5), min(95, sell_rsi + 5)),
+                (min(50, buy_rsi + 5), max(50, sell_rsi - 5)),
+                (min(50, buy_rsi + 10), max(50, sell_rsi - 10)),
+            }:
+                if candidate_buy < candidate_sell:
+                    candidates.append(self.rsi_candidate(candidate_buy, candidate_sell, f"explore around {best.strategy_name}"))
+        elif "fast_ma" in parameters:
+            fast_ma = int(parameters["fast_ma"])
+            slow_ma = int(parameters["slow_ma"])
+            for candidate_fast, candidate_slow in {
+                (max(2, fast_ma - 2), max(fast_ma + 2, slow_ma - 5)),
+                (fast_ma + 1, slow_ma + 5),
+                (fast_ma + 3, slow_ma + 10),
+                (max(2, fast_ma - 1), slow_ma + 10),
+            }:
+                if candidate_fast < candidate_slow:
+                    candidates.append(self.ma_candidate(candidate_fast, candidate_slow, f"explore around {best.strategy_name}"))
+        elif "window" in parameters:
+            window = int(parameters["window"])
+            standard_deviations = float(parameters["standard_deviations"])
+            for candidate_window, candidate_std in {
+                (max(10, window - 10), standard_deviations),
+                (window + 10, standard_deviations),
+                (window, max(1.0, standard_deviations - 0.5)),
+                (window, standard_deviations + 0.5),
+            }:
+                candidates.append(self.bollinger_candidate(candidate_window, candidate_std, f"explore around {best.strategy_name}"))
+
+        return [candidate for candidate in candidates if candidate.strategy_id not in existing_ids]
+
+    def rsi_candidate(self, buy_rsi: int, sell_rsi: int, rationale: str) -> StrategyCandidate:
+        return StrategyCandidate(
+            strategy_id=f"rsi_{buy_rsi}_{sell_rsi}",
+            strategy_name=f"RSI {buy_rsi}/{sell_rsi}",
+            parameters={"buy_rsi": buy_rsi, "sell_rsi": sell_rsi},
+            strategy=RSIStrategy(buy_rsi, sell_rsi),
+            rationale=rationale,
         )
 
-        for lookback_days in [10, 20, 50]:
-            candidates.append(
-                StrategyCandidate(
-                    strategy_id=f"momentum_{lookback_days}",
-                    strategy_name=f"Momentum {lookback_days}D",
-                    parameters={"lookback_days": lookback_days},
-                    strategy=MomentumStrategy(lookback_days),
-                )
-            )
+    def ma_candidate(self, fast_ma: int, slow_ma: int, rationale: str) -> StrategyCandidate:
+        return StrategyCandidate(
+            strategy_id=f"ma_{fast_ma}_{slow_ma}",
+            strategy_name=f"MA {fast_ma}/{slow_ma} Crossover",
+            parameters={"fast_ma": fast_ma, "slow_ma": slow_ma},
+            strategy=MACrossoverStrategy(fast_ma, slow_ma),
+            rationale=rationale,
+        )
 
-        for window, std_dev in [(20, 2), (20, 2.5), (50, 2)]:
-            candidates.append(
-                StrategyCandidate(
-                    strategy_id=f"bollinger_{window}_{str(std_dev).replace('.', '_')}",
-                    strategy_name=f"Bollinger {window}D/{std_dev:g}SD",
-                    parameters={"window": window, "standard_deviations": std_dev},
-                    strategy=BollingerBandStrategy(window, std_dev),
-                )
-            )
+    def momentum_candidate(self, lookback_days: int, rationale: str) -> StrategyCandidate:
+        return StrategyCandidate(
+            strategy_id=f"momentum_{lookback_days}",
+            strategy_name=f"Momentum {lookback_days}D",
+            parameters={"lookback_days": lookback_days},
+            strategy=MomentumStrategy(lookback_days),
+            rationale=rationale,
+        )
 
-        return candidates
+    def bollinger_candidate(self, window: int, standard_deviations: float, rationale: str) -> StrategyCandidate:
+        return StrategyCandidate(
+            strategy_id=f"bollinger_{window}_{str(standard_deviations).replace('.', '_')}",
+            strategy_name=f"Bollinger {window}D/{standard_deviations:g}SD",
+            parameters={"window": window, "standard_deviations": standard_deviations},
+            strategy=BollingerBandStrategy(window, standard_deviations),
+            rationale=rationale,
+        )
 
 
 class MetricsAnalyzer:
@@ -272,14 +318,23 @@ class ResearchAgent:
         prices = filter_years(load_prices(ticker, market_db_path), period_years)
         period = f"{period_years}y"
         rows = []
+        tested_ids: set[str] = set()
+        candidate_queue = self.generator.seed_candidates()
 
-        for iteration, candidate in enumerate(self.generator.generate()[:iterations], start=1):
+        for iteration in range(1, iterations + 1):
+            if not candidate_queue:
+                break
+            candidate = candidate_queue.pop(0)
+            if candidate.strategy_id in tested_ids:
+                continue
+            tested_ids.add(candidate.strategy_id)
             experiment_id = self.store.create_experiment(candidate, ticker, period, "running")
             row = {
                 "iteration": iteration,
                 "experiment_id": experiment_id,
                 "strategy": candidate.strategy_name,
                 "parameters": candidate.parameters,
+                "rationale": candidate.rationale,
                 "status": "running",
             }
             try:
@@ -306,6 +361,28 @@ class ResearchAgent:
                 row.update({"status": "failed", "notes": notes})
             rows.append(row)
 
+            if any(queued.rationale == "broad family scan" for queued in candidate_queue):
+                continue
+
+            completed_rows = [completed for completed in rows if completed.get("status") == "completed"]
+            if completed_rows:
+                top_rows = sorted(completed_rows, key=lambda completed: completed["score"], reverse=True)[:2]
+                queued_ids = {queued.strategy_id for queued in candidate_queue}
+                existing_ids = tested_ids.union(queued_ids)
+                candidates_by_id = {candidate.strategy_id: candidate for candidate in self.generator.seed_candidates()}
+                candidates_by_id[candidate.strategy_id] = candidate
+                for completed in rows:
+                    strategy_id = self.strategy_id_from_row(completed)
+                    if strategy_id not in candidates_by_id:
+                        candidates_by_id[strategy_id] = self.candidate_from_row(completed)
+                new_variations: list[StrategyCandidate] = []
+                for top_row in top_rows:
+                    top_candidate = candidates_by_id.get(self.strategy_id_from_row(top_row))
+                    if top_candidate:
+                        new_variations.extend(self.generator.variations(top_candidate, existing_ids))
+                        existing_ids.update(candidate.strategy_id for candidate in new_variations)
+                candidate_queue = new_variations + candidate_queue
+
         experiments = pd.DataFrame(rows)
         rankings = (
             experiments[experiments["status"] == "completed"]
@@ -315,6 +392,35 @@ class ResearchAgent:
         if not rankings.empty:
             rankings.insert(0, "rank", range(1, len(rankings) + 1))
         return AgentRunResult(experiments, rankings)
+
+    def strategy_id_from_row(self, row: dict[str, object]) -> str:
+        parameters = row.get("parameters", {})
+        if isinstance(parameters, str):
+            parameters = json.loads(parameters)
+        if "lookback_days" in parameters:
+            return f"momentum_{int(parameters['lookback_days'])}"
+        if "buy_rsi" in parameters:
+            return f"rsi_{int(parameters['buy_rsi'])}_{int(parameters['sell_rsi'])}"
+        if "fast_ma" in parameters:
+            return f"ma_{int(parameters['fast_ma'])}_{int(parameters['slow_ma'])}"
+        if "window" in parameters:
+            return f"bollinger_{int(parameters['window'])}_{str(parameters['standard_deviations']).replace('.', '_')}"
+        return str(row.get("strategy", "unknown")).lower().replace(" ", "_")
+
+    def candidate_from_row(self, row: dict[str, object]) -> StrategyCandidate:
+        parameters = row.get("parameters", {})
+        if isinstance(parameters, str):
+            parameters = json.loads(parameters)
+        strategy_name = str(row.get("strategy", ""))
+        if "lookback_days" in parameters:
+            return self.generator.momentum_candidate(int(parameters["lookback_days"]), f"explore around {strategy_name}")
+        if "buy_rsi" in parameters:
+            return self.generator.rsi_candidate(int(parameters["buy_rsi"]), int(parameters["sell_rsi"]), f"explore around {strategy_name}")
+        if "fast_ma" in parameters:
+            return self.generator.ma_candidate(int(parameters["fast_ma"]), int(parameters["slow_ma"]), f"explore around {strategy_name}")
+        if "window" in parameters:
+            return self.generator.bollinger_candidate(int(parameters["window"]), float(parameters["standard_deviations"]), f"explore around {strategy_name}")
+        raise ValueError(f"Cannot rebuild candidate from row: {row}")
 
 
 def filter_years(prices: pd.DataFrame, years: int) -> pd.DataFrame:

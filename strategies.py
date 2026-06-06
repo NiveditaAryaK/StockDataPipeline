@@ -48,18 +48,30 @@ class RSIStrategy(Strategy):
 
 
 class MACrossoverStrategy(Strategy):
-    name = "MA 5/20 Crossover"
-    required_columns = {"date", "open", "close", "ma_5", "ma_20"}
-    minimum_rows = 3
+    required_columns = {"date", "open", "close"}
+
+    def __init__(self, fast_window: int = 5, slow_window: int = 20) -> None:
+        if fast_window >= slow_window:
+            raise ValueError("Fast MA window must be smaller than slow MA window.")
+        self.fast_window = fast_window
+        self.slow_window = slow_window
+        self.minimum_rows = slow_window + 2
+        self.name = f"MA {fast_window}/{slow_window} Crossover"
 
     def generate_signals(self, prices: pd.DataFrame) -> pd.DataFrame:
+        data = prices.copy()
+        fast_column = f"ma_{self.fast_window}"
+        slow_column = f"ma_{self.slow_window}"
+        data[fast_column] = data["close"].rolling(self.fast_window).mean()
+        data[slow_column] = data["close"].rolling(self.slow_window).mean()
+
         rows = []
-        for index in range(2, len(prices)):
-            before_previous = prices.iloc[index - 2]
-            previous = prices.iloc[index - 1]
-            current = prices.iloc[index]
-            crossed_above = before_previous["ma_5"] <= before_previous["ma_20"] and previous["ma_5"] > previous["ma_20"]
-            crossed_below = before_previous["ma_5"] >= before_previous["ma_20"] and previous["ma_5"] < previous["ma_20"]
+        for index in range(self.slow_window + 1, len(data)):
+            before_previous = data.iloc[index - 2]
+            previous = data.iloc[index - 1]
+            current = data.iloc[index]
+            crossed_above = before_previous[fast_column] <= before_previous[slow_column] and previous[fast_column] > previous[slow_column]
+            crossed_below = before_previous[fast_column] >= before_previous[slow_column] and previous[fast_column] < previous[slow_column]
             if crossed_above:
                 signal = "BUY"
             elif crossed_below:
@@ -71,8 +83,8 @@ class MACrossoverStrategy(Strategy):
                     "date": current["date"],
                     "signal_date": previous["date"],
                     "signal": signal,
-                    "ma_5": previous["ma_5"],
-                    "ma_20": previous["ma_20"],
+                    fast_column: previous[fast_column],
+                    slow_column: previous[slow_column],
                     "execution_price": current["open"],
                 }
             )

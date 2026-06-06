@@ -34,12 +34,13 @@ class ResearchAgentTests(unittest.TestCase):
             save_prices(prices, market_db)
 
             agent = ResearchAgent(store=ExperimentStore(agent_db))
-            result = agent.run("TEST", period_years=1, iterations=3, market_db_path=market_db)
+            result = agent.run("TEST", period_years=1, iterations=6, market_db_path=market_db)
             history = agent.store.load_history("TEST")
 
-            self.assertEqual(len(result.experiments), 3)
+            self.assertEqual(len(result.experiments), 6)
             self.assertFalse(result.rankings.empty)
-            self.assertEqual(len(history), 3)
+            self.assertEqual(len(history), 6)
+            self.assertTrue(result.experiments["rationale"].str.contains("explore around").any())
 
 
 if __name__ == "__main__":

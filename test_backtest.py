@@ -54,13 +54,12 @@ class BacktestTests(unittest.TestCase):
             run_rsi_backtest(prices, "TEST")
 
     def test_ma_crossover_strategy_records_trades(self) -> None:
+        closes = [10] * 20 + [12, 14, 16, 18, 20, 18, 16, 14, 12, 10, 8, 8, 8, 8, 8]
         prices = pd.DataFrame(
             {
-                "date": pd.date_range("2024-01-01", periods=8, freq="D"),
-                "open": [100, 101, 103, 104, 103, 102, 101, 100],
-                "close": [100, 102, 104, 103, 102, 101, 100, 99],
-                "ma_5": [9, 9, 11, 12, 11, 9, 8, 8],
-                "ma_20": [10, 10, 10, 10, 10, 10, 10, 10],
+                "date": pd.date_range("2024-01-01", periods=len(closes), freq="D"),
+                "open": closes,
+                "close": closes,
             }
         )
 
