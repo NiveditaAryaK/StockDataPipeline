@@ -8,6 +8,7 @@ import streamlit as st
 
 from backtest import run_rsi_parameter_sweep, run_strategy_backtest, run_strategy_comparison
 from main import DB_PATH, load_prices, run_pipeline
+from ml_training import MODEL_TRAINERS, compare_model_across_tickers
 from paper_trading import run_paper_trading_simulation
 from research_agent import ExperimentStore, ResearchAgent
 from strategies import STRATEGY_LABELS, build_strategy
@@ -81,6 +82,61 @@ if selected_tickers:
     st.dataframe(display_comparison, width="stretch")
 else:
     st.info("Select at least one ticker to compare.")
+
+st.subheader("ML Alpha Comparison")
+with st.container():
+    ml_cols = st.columns(4)
+    ml_model = ml_cols[0].selectbox(
+        "ML Model",
+        list(MODEL_TRAINERS),
+        index=list(MODEL_TRAINERS).index("xgboost") if "xgboost" in MODEL_TRAINERS else 0,
+        format_func=lambda key: {"logistic": "Logistic Regression", "random_forest": "Random Forest", "xgboost": "XGBoost"}.get(
+            key, key
+        ),
+    )
+    ml_threshold = ml_cols[1].selectbox("ML Threshold", [0.25, 0.30, 0.35, 0.40, 0.45, 0.50], index=0)
+    ml_test_size = ml_cols[2].selectbox("ML Test Window", [0.2, 0.3, 0.4], index=0, format_func=lambda value: f"{value:.0%}")
+    run_ml_compare = ml_cols[3].button("Run ML Compare", type="primary")
+
+if selected_tickers:
+    if run_ml_compare:
+        with st.spinner("Training ML models and comparing alpha across tickers..."):
+            ml_comparison, ml_summary = compare_model_across_tickers(
+                selected_tickers,
+                model_key=ml_model,
+                threshold=ml_threshold,
+                test_size=ml_test_size,
+            )
+        st.session_state["ml_comparison"] = ml_comparison
+        st.session_state["ml_summary"] = ml_summary
+        st.session_state["ml_settings"] = {
+            "model": ml_model,
+            "threshold": ml_threshold,
+            "test_size": ml_test_size,
+        }
+
+    ml_comparison = st.session_state.get("ml_comparison")
+    ml_summary = st.session_state.get("ml_summary")
+    ml_settings = st.session_state.get("ml_settings", {})
+    if ml_comparison is not None and ml_summary is not None:
+        ml_metric_cols = st.columns(4)
+        ml_metric_cols[0].metric("Mean Alpha", f"{ml_summary['mean_alpha'] * 100:.2f}%")
+        ml_metric_cols[1].metric("Median Alpha", f"{ml_summary['median_alpha'] * 100:.2f}%")
+        ml_metric_cols[2].metric("Positive Alpha Rate", f"{ml_summary['positive_alpha_rate'] * 100:.2f}%")
+        ml_metric_cols[3].metric(
+            "Threshold",
+            f"{ml_settings.get('threshold', ml_threshold) * 100:.0f}%",
+        )
+
+        display_ml = ml_comparison.copy()
+        for column in ["threshold", "auc_roc", "win_rate", "total_return", "buy_hold_return", "alpha", "max_drawdown"]:
+            display_ml[column] = (display_ml[column] * 100).round(2)
+        display_ml["sharpe_ratio"] = display_ml["sharpe_ratio"].round(2)
+        st.dataframe(display_ml, width="stretch")
+    else:
+        st.info("Run the ML comparison to test alpha across the selected tickers.")
+else:
+    st.info("Select at least one ticker for ML comparison.")
 
 st.subheader("Daily Returns")
 st.bar_chart(data.set_index("date")["daily_return"])
