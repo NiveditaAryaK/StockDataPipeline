@@ -562,6 +562,8 @@ def compare_walk_forward_across_tickers(
         )
 
     comparison = pd.DataFrame(rows).sort_values("compounded_alpha", ascending=False, ignore_index=True)
+    worst_row = comparison.loc[comparison["compounded_alpha"].idxmin()]
+    comparison_ex_worst = comparison[comparison["ticker"] != worst_row["ticker"]]
     summary = {
         "mean_alpha": float(comparison["mean_alpha"].mean()),
         "median_alpha": float(comparison["mean_alpha"].median()),
@@ -570,6 +572,16 @@ def compare_walk_forward_across_tickers(
         "positive_ticker_rate": float((comparison["compounded_alpha"] > 0).mean()),
         "mean_positive_window_rate": float(comparison["positive_alpha_rate"].mean()),
         "mean_auc_roc": float(comparison["mean_auc_roc"].mean()),
+        "worst_ticker": worst_row["ticker"],
+        "worst_compounded_alpha": float(worst_row["compounded_alpha"]),
+        "mean_alpha_ex_worst": float(comparison_ex_worst["mean_alpha"].mean()) if not comparison_ex_worst.empty else 0.0,
+        "median_alpha_ex_worst": float(comparison_ex_worst["mean_alpha"].median()) if not comparison_ex_worst.empty else 0.0,
+        "mean_compounded_alpha_ex_worst": float(comparison_ex_worst["compounded_alpha"].mean())
+        if not comparison_ex_worst.empty
+        else 0.0,
+        "median_compounded_alpha_ex_worst": float(comparison_ex_worst["compounded_alpha"].median())
+        if not comparison_ex_worst.empty
+        else 0.0,
     }
     return comparison, summary
 
@@ -634,6 +646,11 @@ if __name__ == "__main__":
             print(f"Median Alpha: {summary['median_alpha']:.2%}")
             print(f"Mean Compounded Alpha: {summary['mean_compounded_alpha']:.2%}")
             print(f"Median Compounded Alpha: {summary['median_compounded_alpha']:.2%}")
+            print(f"Worst Ticker: {summary['worst_ticker']} ({summary['worst_compounded_alpha']:.2%})")
+            print(f"Mean Alpha Ex-Worst: {summary['mean_alpha_ex_worst']:.2%}")
+            print(f"Median Alpha Ex-Worst: {summary['median_alpha_ex_worst']:.2%}")
+            print(f"Mean Compounded Alpha Ex-Worst: {summary['mean_compounded_alpha_ex_worst']:.2%}")
+            print(f"Median Compounded Alpha Ex-Worst: {summary['median_compounded_alpha_ex_worst']:.2%}")
             print(f"Positive Ticker Rate: {summary['positive_ticker_rate']:.2%}")
             print(f"Mean Positive Window Rate: {summary['mean_positive_window_rate']:.2%}")
             print(f"Mean AUC ROC: {summary['mean_auc_roc']:.3f}")

@@ -178,6 +178,8 @@ Run walk-forward validation across tickers:
 python ml_training.py --model xgboost --walk-forward --compare AAPL MSFT NVDA AMZN GOOGL META SPY TSLA --threshold 0.30 --train-years 5 --test-years 1
 ```
 
+The multi-ticker walk-forward summary also reports ex-worst metrics, which show how much one extreme ticker is skewing the average.
+
 Current ML metrics:
 
 - Accuracy

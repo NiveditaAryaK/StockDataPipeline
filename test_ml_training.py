@@ -249,6 +249,8 @@ class MLTrainingTests(unittest.TestCase):
         self.assertAlmostEqual(summary["mean_compounded_alpha"], 0.10)
         self.assertAlmostEqual(summary["median_compounded_alpha"], 0.10)
         self.assertAlmostEqual(summary["positive_ticker_rate"], 0.5)
+        self.assertEqual(summary["worst_ticker"], "BBB")
+        self.assertAlmostEqual(summary["mean_compounded_alpha_ex_worst"], 0.30)
 
 
 if __name__ == "__main__":

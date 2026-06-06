@@ -223,10 +223,10 @@ if walk_results is not None and walk_summary is not None:
     walk_metric_cols = st.columns(5)
     if walk_mode == "multi":
         walk_metric_cols[0].metric("Mean Alpha", f"{walk_summary['mean_alpha'] * 100:.2f}%")
-        walk_metric_cols[1].metric("Median Alpha", f"{walk_summary['median_alpha'] * 100:.2f}%")
+        walk_metric_cols[1].metric("Mean Alpha Ex-Worst", f"{walk_summary['mean_alpha_ex_worst'] * 100:.2f}%")
         walk_metric_cols[2].metric("Mean Comp Alpha", f"{walk_summary['mean_compounded_alpha'] * 100:.2f}%")
-        walk_metric_cols[3].metric("Positive Tickers", f"{walk_summary['positive_ticker_rate'] * 100:.2f}%")
-        walk_metric_cols[4].metric("Mean AUC", f"{walk_summary['mean_auc_roc']:.3f}")
+        walk_metric_cols[3].metric("Comp Alpha Ex-Worst", f"{walk_summary['mean_compounded_alpha_ex_worst'] * 100:.2f}%")
+        walk_metric_cols[4].metric("Worst Ticker", walk_summary["worst_ticker"])
     else:
         walk_metric_cols[0].metric("Windows", f"{walk_summary['windows']:.0f}")
         walk_metric_cols[1].metric("Mean Alpha", f"{walk_summary['mean_alpha'] * 100:.2f}%")
