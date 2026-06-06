@@ -77,6 +77,10 @@ class MLTrainingTests(unittest.TestCase):
         self.assertIn("buy_win_rate", result.threshold_sweep.columns)
         self.assertIn("sell_win_rate", result.threshold_sweep.columns)
         self.assertFalse(result.threshold_sweep.empty)
+        self.assertIn("total_return", result.threshold_backtest.columns)
+        self.assertIn("buy_hold_return", result.threshold_backtest.columns)
+        self.assertIn("sharpe_ratio", result.threshold_backtest.columns)
+        self.assertFalse(result.threshold_backtest.empty)
 
     def test_train_random_forest_returns_metrics_and_importance(self) -> None:
         dataset = make_training_dataset()
@@ -102,6 +106,10 @@ class MLTrainingTests(unittest.TestCase):
         self.assertIn("buy_win_rate", result.threshold_sweep.columns)
         self.assertIn("sell_win_rate", result.threshold_sweep.columns)
         self.assertFalse(result.threshold_sweep.empty)
+        self.assertIn("total_return", result.threshold_backtest.columns)
+        self.assertIn("buy_hold_return", result.threshold_backtest.columns)
+        self.assertIn("sharpe_ratio", result.threshold_backtest.columns)
+        self.assertFalse(result.threshold_backtest.empty)
 
     def test_model_trainers_exposes_supported_models(self) -> None:
         self.assertIn("logistic", MODEL_TRAINERS)

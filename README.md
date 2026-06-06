@@ -157,6 +157,9 @@ Current ML metrics:
 - AUC ROC
 - Latest probability up
 - Feature importance from model coefficients
+- Probability distribution diagnostics
+- Threshold win-rate sweep
+- One-day threshold backtest
 
 ## Backtest Metrics
 

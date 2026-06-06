@@ -14,6 +14,8 @@ from sklearn.preprocessing import StandardScaler
 from main import DB_PATH
 from ml_dataset import FEATURE_COLUMNS, build_dataset_for_ticker
 
+TRADING_DAYS_PER_YEAR = 252
+
 
 @dataclass(frozen=True)
 class MLTrainingResult:
@@ -45,6 +47,7 @@ class MLTrainingResult:
     predictions: pd.DataFrame
     feature_importance: pd.DataFrame
     threshold_sweep: pd.DataFrame
+    threshold_backtest: pd.DataFrame
     pipeline: Pipeline
 
 
@@ -179,6 +182,7 @@ def train_classifier(
     feature_importance = build_feature_importance(pipeline, features)
     probability_summary = pd.Series(probabilities_up).quantile([0, 0.25, 0.75, 1])
     threshold_sweep = build_threshold_sweep(probabilities_up, y_test)
+    threshold_backtest = build_threshold_backtest(test_df, probabilities_up)
 
     return MLTrainingResult(
         ticker=ticker.upper(),
@@ -209,6 +213,7 @@ def train_classifier(
         predictions=predictions,
         feature_importance=feature_importance,
         threshold_sweep=threshold_sweep,
+        threshold_backtest=threshold_backtest,
         pipeline=pipeline,
     )
 
@@ -260,6 +265,49 @@ def build_threshold_sweep(
                 "sell_win_rate": float((1 - actual[sell_mask]).mean()) if sell_count else None,
             }
         )
+    return pd.DataFrame(rows)
+
+
+def build_threshold_backtest(
+    test_df: pd.DataFrame,
+    probabilities_up,
+    thresholds: tuple[float, ...] = (0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60),
+) -> pd.DataFrame:
+    probabilities = pd.Series(probabilities_up).reset_index(drop=True)
+    next_day_returns = test_df["tomorrow_return"].reset_index(drop=True)
+    buy_hold_return = float((1 + next_day_returns).prod() - 1)
+    rows = []
+
+    for threshold in thresholds:
+        buy_mask = probabilities >= threshold
+        strategy_returns = next_day_returns.where(buy_mask, 0.0)
+        trade_returns = next_day_returns[buy_mask]
+        equity_curve = (1 + strategy_returns).cumprod()
+        drawdown = equity_curve / equity_curve.cummax() - 1
+
+        if strategy_returns.std() == 0:
+            sharpe_ratio = 0.0
+        else:
+            sharpe_ratio = float((strategy_returns.mean() / strategy_returns.std()) * (TRADING_DAYS_PER_YEAR**0.5))
+
+        wins = trade_returns[trade_returns > 0]
+        losses = trade_returns[trade_returns <= 0]
+        total_return = float(equity_curve.iloc[-1] - 1)
+        rows.append(
+            {
+                "threshold": threshold,
+                "trades": int(buy_mask.sum()),
+                "win_rate": float((trade_returns > 0).mean()) if len(trade_returns) else None,
+                "avg_win": float(wins.mean()) if len(wins) else None,
+                "avg_loss": float(losses.mean()) if len(losses) else None,
+                "total_return": total_return,
+                "buy_hold_return": buy_hold_return,
+                "alpha": total_return - buy_hold_return,
+                "max_drawdown": float(drawdown.min()),
+                "sharpe_ratio": sharpe_ratio,
+            }
+        )
+
     return pd.DataFrame(rows)
 
 
@@ -334,5 +382,22 @@ if __name__ == "__main__":
             },
         )
     )
+    print("\nThreshold Backtest:")
+    print(
+        result.threshold_backtest.to_string(
+            index=False,
+            formatters={
+                "threshold": "{:.0%}".format,
+                "win_rate": lambda value: "n/a" if pd.isna(value) else f"{value:.2%}",
+                "avg_win": lambda value: "n/a" if pd.isna(value) else f"{value:.2%}",
+                "avg_loss": lambda value: "n/a" if pd.isna(value) else f"{value:.2%}",
+                "total_return": "{:.2%}".format,
+                "buy_hold_return": "{:.2%}".format,
+                "alpha": "{:.2%}".format,
+                "max_drawdown": "{:.2%}".format,
+                "sharpe_ratio": "{:.2f}".format,
+            },
+        )
+    )
     print("\nTop feature importance:")
-    print(result.feature_importance.head(10).to_string(index=False))
+    print(result.feature_importance.to_string(index=False))
