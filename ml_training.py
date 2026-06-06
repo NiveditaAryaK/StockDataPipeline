@@ -5,10 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.pipeline import Pipeline
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 
 from main import DB_PATH
@@ -128,6 +129,43 @@ def train_random_forest(
         dataset=dataset,
         ticker=ticker,
         model_name="Random Forest",
+        pipeline=pipeline,
+        feature_columns=feature_columns,
+        test_size=test_size,
+        buy_threshold=buy_threshold,
+        sell_threshold=sell_threshold,
+    )
+
+
+def train_xgboost(
+    dataset: pd.DataFrame,
+    ticker: str,
+    feature_columns: list[str] | None = None,
+    test_size: float = 0.2,
+    buy_threshold: float = 0.55,
+    sell_threshold: float = 0.45,
+) -> MLTrainingResult:
+    pipeline = Pipeline(
+        steps=[
+            (
+                "model",
+                XGBClassifier(
+                    n_estimators=200,
+                    max_depth=3,
+                    learning_rate=0.03,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    eval_metric="logloss",
+                    random_state=42,
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+    )
+    return train_classifier(
+        dataset=dataset,
+        ticker=ticker,
+        model_name="XGBoost",
         pipeline=pipeline,
         feature_columns=feature_columns,
         test_size=test_size,
@@ -314,6 +352,7 @@ def build_threshold_backtest(
 MODEL_TRAINERS = {
     "logistic": train_logistic_regression,
     "random_forest": train_random_forest,
+    "xgboost": train_xgboost,
 }
 
 

@@ -148,6 +148,14 @@ python ml_training.py AAPL --model random_forest --test-size 0.2
 
 Random Forest can learn interaction effects between indicators, such as momentum behaving differently during high-volatility periods.
 
+Train the gradient-boosted tree model:
+
+```bash
+python ml_training.py AAPL --model xgboost --test-size 0.2
+```
+
+XGBoost builds trees sequentially, with each new tree trying to correct mistakes from the previous trees.
+
 Current ML metrics:
 
 - Accuracy
