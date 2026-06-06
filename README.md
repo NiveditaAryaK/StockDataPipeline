@@ -132,6 +132,24 @@ Current feature set:
 - RSI change
 - Volume change
 
+Phase 2 trains the first baseline model:
+
+```bash
+python ml_training.py AAPL --test-size 0.2
+```
+
+This uses Logistic Regression with a chronological split. The older rows are used for training and the newest rows are kept as unseen test data.
+
+Current ML metrics:
+
+- Accuracy
+- Precision
+- Recall
+- F1 score
+- AUC ROC
+- Latest probability up
+- Feature importance from model coefficients
+
 ## Backtest Metrics
 
 - Total profit
@@ -173,6 +191,7 @@ The Bollinger strategy is mean-reversion based: it buys below the lower band and
 - `research.py`: 5-year and 10-year batch research runner
 - `research_agent.py`: automated strategy generation, evaluation, and ranking
 - `ml_dataset.py`: ML feature and target dataset builder
+- `ml_training.py`: ML model training, prediction, and classification metrics
 - `paper_trading.py`: market feed, strategy engine, paper broker, portfolio
 - `dashboard.py`: Streamlit dashboard
 
