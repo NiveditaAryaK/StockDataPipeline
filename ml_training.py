@@ -356,9 +356,53 @@ MODEL_TRAINERS = {
 }
 
 
+def compare_model_across_tickers(
+    tickers: list[str],
+    model_key: str = "xgboost",
+    threshold: float = 0.25,
+    test_size: float = 0.2,
+    db_path: Path = DB_PATH,
+) -> tuple[pd.DataFrame, dict[str, float]]:
+    if model_key not in MODEL_TRAINERS:
+        raise ValueError(f"Unsupported model '{model_key}'. Choose from: {', '.join(sorted(MODEL_TRAINERS))}")
+
+    rows = []
+    for ticker in tickers:
+        dataset = build_dataset_for_ticker(ticker, db_path)
+        result = MODEL_TRAINERS[model_key](dataset, ticker, test_size=test_size)
+        threshold_rows = result.threshold_backtest[result.threshold_backtest["threshold"] == threshold]
+        if threshold_rows.empty:
+            raise ValueError(f"Threshold {threshold:.2f} is not available in the threshold backtest.")
+
+        threshold_result = threshold_rows.iloc[0]
+        rows.append(
+            {
+                "ticker": ticker.upper(),
+                "model": result.model_name,
+                "threshold": threshold,
+                "auc_roc": result.auc_roc,
+                "trades": int(threshold_result["trades"]),
+                "win_rate": threshold_result["win_rate"],
+                "total_return": float(threshold_result["total_return"]),
+                "buy_hold_return": float(threshold_result["buy_hold_return"]),
+                "alpha": float(threshold_result["alpha"]),
+                "max_drawdown": float(threshold_result["max_drawdown"]),
+                "sharpe_ratio": float(threshold_result["sharpe_ratio"]),
+            }
+        )
+
+    comparison = pd.DataFrame(rows).sort_values("alpha", ascending=False, ignore_index=True)
+    summary = {
+        "mean_alpha": float(comparison["alpha"].mean()),
+        "median_alpha": float(comparison["alpha"].median()),
+        "positive_alpha_rate": float((comparison["alpha"] > 0).mean()),
+    }
+    return comparison, summary
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train ML models for next-day stock direction prediction.")
-    parser.add_argument("ticker", help="Ticker symbol, for example: AAPL")
+    parser.add_argument("ticker", nargs="?", default="AAPL", help="Ticker symbol, for example: AAPL")
     parser.add_argument(
         "--model",
         choices=sorted(MODEL_TRAINERS),
@@ -369,11 +413,47 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-size", type=float, default=0.2, help="Future holdout share, for example 0.2")
     parser.add_argument("--buy-threshold", type=float, default=0.55, help="Probability needed for a BUY signal")
     parser.add_argument("--sell-threshold", type=float, default=0.45, help="Probability needed for a SELL signal")
+    parser.add_argument(
+        "--compare",
+        nargs="+",
+        help="Compare the selected model across multiple tickers instead of printing one detailed ticker report",
+    )
+    parser.add_argument("--threshold", type=float, default=0.25, help="Threshold used for multi-ticker comparison")
     return parser
 
 
 if __name__ == "__main__":
     args = build_parser().parse_args()
+    if args.compare:
+        comparison, summary = compare_model_across_tickers(
+            args.compare,
+            model_key=args.model,
+            threshold=args.threshold,
+            test_size=args.test_size,
+            db_path=args.db,
+        )
+        print(f"{args.model} comparison at threshold {args.threshold:.0%}")
+        print(
+            comparison.to_string(
+                index=False,
+                formatters={
+                    "threshold": "{:.0%}".format,
+                    "auc_roc": lambda value: "n/a" if pd.isna(value) else f"{value:.3f}",
+                    "win_rate": lambda value: "n/a" if pd.isna(value) else f"{value:.2%}",
+                    "total_return": "{:.2%}".format,
+                    "buy_hold_return": "{:.2%}".format,
+                    "alpha": "{:.2%}".format,
+                    "max_drawdown": "{:.2%}".format,
+                    "sharpe_ratio": "{:.2f}".format,
+                },
+            )
+        )
+        print("\nSummary:")
+        print(f"Mean Alpha: {summary['mean_alpha']:.2%}")
+        print(f"Median Alpha: {summary['median_alpha']:.2%}")
+        print(f"Positive Alpha Rate: {summary['positive_alpha_rate']:.2%}")
+        raise SystemExit(0)
+
     ml_dataset = build_dataset_for_ticker(args.ticker, args.db)
     result = MODEL_TRAINERS[args.model](
         ml_dataset,

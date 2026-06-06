@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
 from ml_dataset import build_ml_dataset
 from ml_training import (
     MODEL_TRAINERS,
+    MLTrainingResult,
+    compare_model_across_tickers,
     chronological_split,
     probability_to_signal,
     train_logistic_regression,
@@ -140,6 +143,64 @@ class MLTrainingTests(unittest.TestCase):
         self.assertIn("logistic", MODEL_TRAINERS)
         self.assertIn("random_forest", MODEL_TRAINERS)
         self.assertIn("xgboost", MODEL_TRAINERS)
+
+    def test_compare_model_across_tickers_returns_alpha_summary(self) -> None:
+        def fake_trainer(dataset, ticker, test_size=0.2):
+            alpha = {"AAA": 0.10, "BBB": -0.02}[ticker]
+            return MLTrainingResult(
+                ticker=ticker,
+                model_name="Fake Model",
+                train_rows=10,
+                test_rows=5,
+                train_start=pd.Timestamp("2023-01-01"),
+                train_end=pd.Timestamp("2023-01-10"),
+                test_start=pd.Timestamp("2023-01-11"),
+                test_end=pd.Timestamp("2023-01-15"),
+                accuracy=0.5,
+                precision=0.5,
+                recall=0.5,
+                f1=0.5,
+                auc_roc=0.55,
+                actual_up_rate=0.5,
+                predicted_up_rate=0.5,
+                probability_min=0.1,
+                probability_25pct=0.2,
+                probability_avg=0.3,
+                probability_75pct=0.4,
+                probability_max=0.5,
+                buy_signal_rate=0.2,
+                hold_signal_rate=0.6,
+                sell_signal_rate=0.2,
+                latest_probability_up=0.4,
+                latest_signal="HOLD",
+                predictions=pd.DataFrame(),
+                feature_importance=pd.DataFrame({"feature": ["x"], "importance": [1.0]}),
+                threshold_sweep=pd.DataFrame(),
+                threshold_backtest=pd.DataFrame(
+                    [
+                        {
+                            "threshold": 0.25,
+                            "trades": 3,
+                            "win_rate": 2 / 3,
+                            "total_return": 0.20 + alpha,
+                            "buy_hold_return": 0.20,
+                            "alpha": alpha,
+                            "max_drawdown": -0.05,
+                            "sharpe_ratio": 1.0,
+                        }
+                    ]
+                ),
+                pipeline=None,
+            )
+
+        with patch("ml_training.build_dataset_for_ticker", return_value=pd.DataFrame()):
+            with patch.dict("ml_training.MODEL_TRAINERS", {"fake": fake_trainer}):
+                comparison, summary = compare_model_across_tickers(["AAA", "BBB"], model_key="fake")
+
+        self.assertEqual(list(comparison["ticker"]), ["AAA", "BBB"])
+        self.assertAlmostEqual(summary["mean_alpha"], 0.04)
+        self.assertAlmostEqual(summary["median_alpha"], 0.04)
+        self.assertAlmostEqual(summary["positive_alpha_rate"], 0.5)
 
 
 if __name__ == "__main__":

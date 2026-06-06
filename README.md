@@ -156,6 +156,14 @@ python ml_training.py AAPL --model xgboost --test-size 0.2
 
 XGBoost builds trees sequentially, with each new tree trying to correct mistakes from the previous trees.
 
+Compare a model across tickers:
+
+```bash
+python ml_training.py --model xgboost --compare AAPL MSFT NVDA META AMZN GOOGL SPY TSLA --threshold 0.25
+```
+
+This prints ticker-level return, buy-and-hold return, alpha, and summary alpha statistics.
+
 Current ML metrics:
 
 - Accuracy
