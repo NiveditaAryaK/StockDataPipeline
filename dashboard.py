@@ -169,6 +169,82 @@ if selected_tickers:
 else:
     st.info("Select at least one ticker for ML comparison.")
 
+st.subheader("ML Model Diagnostics")
+with st.container():
+    diagnostic_cols = st.columns(4)
+    diagnostic_model = diagnostic_cols[0].selectbox(
+        "Diagnostic Model",
+        list(MODEL_TRAINERS),
+        index=list(MODEL_TRAINERS).index("xgboost") if "xgboost" in MODEL_TRAINERS else 0,
+        format_func=lambda key: {"logistic": "Logistic Regression", "random_forest": "Random Forest", "xgboost": "XGBoost"}.get(
+            key, key
+        ),
+    )
+    diagnostic_test_size = diagnostic_cols[1].selectbox(
+        "Diagnostic Test Window",
+        [0.2, 0.3, 0.4],
+        index=0,
+        format_func=lambda value: f"{value:.0%}",
+    )
+    diagnostic_threshold = diagnostic_cols[2].selectbox(
+        "Diagnostic Threshold",
+        [0.25, 0.30, 0.35, 0.40, 0.45, 0.50],
+        index=1,
+    )
+    run_diagnostics = diagnostic_cols[3].button("Run Diagnostics", type="primary")
+
+if run_diagnostics:
+    with st.spinner("Training model and building diagnostics..."):
+        diagnostic_dataset = build_dataset_for_ticker(selected_ticker)
+        diagnostic_result = MODEL_TRAINERS[diagnostic_model](
+            diagnostic_dataset,
+            selected_ticker,
+            test_size=diagnostic_test_size,
+            buy_threshold=diagnostic_threshold,
+            sell_threshold=max(0.0, diagnostic_threshold - 0.10),
+        )
+    st.session_state["diagnostic_result"] = diagnostic_result
+    st.session_state["diagnostic_ticker"] = selected_ticker
+
+diagnostic_result = st.session_state.get("diagnostic_result")
+if diagnostic_result is not None:
+    diagnostic_metric_cols = st.columns(5)
+    diagnostic_metric_cols[0].metric("AUC ROC", "N/A" if diagnostic_result.auc_roc is None else f"{diagnostic_result.auc_roc:.3f}")
+    diagnostic_metric_cols[1].metric("Accuracy", f"{diagnostic_result.accuracy * 100:.2f}%")
+    diagnostic_metric_cols[2].metric("Probability Min", f"{diagnostic_result.probability_min * 100:.2f}%")
+    diagnostic_metric_cols[3].metric("Probability Avg", f"{diagnostic_result.probability_avg * 100:.2f}%")
+    diagnostic_metric_cols[4].metric("Probability Max", f"{diagnostic_result.probability_max * 100:.2f}%")
+
+    diagnostic_chart_cols = st.columns(2)
+    importance = diagnostic_result.feature_importance[["feature", "importance"]].copy()
+    if importance["importance"].sum() != 0:
+        importance["importance"] = importance["importance"] / importance["importance"].sum()
+    importance = importance.set_index("feature").sort_values("importance", ascending=True)
+    diagnostic_chart_cols[0].subheader("Feature Importance")
+    diagnostic_chart_cols[0].bar_chart(importance, height=360)
+
+    probability_pct = diagnostic_result.predictions["probability_up"] * 100
+    probability_bins = pd.cut(
+        probability_pct,
+        bins=list(range(0, 105, 5)),
+        include_lowest=True,
+        right=False,
+    )
+    probability_distribution = probability_bins.value_counts().sort_index()
+    probability_distribution.index = [
+        f"{interval.left:.0f}% to {interval.right:.0f}%" for interval in probability_distribution.index
+    ]
+    diagnostic_chart_cols[1].subheader("Probability Distribution")
+    diagnostic_chart_cols[1].bar_chart(pd.DataFrame({"Predictions": probability_distribution}), height=360)
+
+    diagnostic_display = diagnostic_result.threshold_backtest.copy()
+    for column in ["threshold", "win_rate", "avg_win", "avg_loss", "total_return", "buy_hold_return", "alpha", "max_drawdown"]:
+        diagnostic_display[column] = (diagnostic_display[column] * 100).round(2)
+    diagnostic_display["sharpe_ratio"] = diagnostic_display["sharpe_ratio"].round(2)
+    st.dataframe(diagnostic_display, width="stretch")
+else:
+    st.info("Run diagnostics to visualize feature importance and model probability spread for the selected ticker.")
+
 st.subheader("ML Walk-Forward Validation")
 with st.container():
     walk_cols = st.columns(6)
