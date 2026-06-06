@@ -10,6 +10,7 @@ from ml_training import (
     MODEL_TRAINERS,
     MLTrainingResult,
     compare_model_across_tickers,
+    compare_walk_forward_across_tickers,
     chronological_split,
     probability_to_signal,
     train_logistic_regression,
@@ -223,6 +224,31 @@ class MLTrainingTests(unittest.TestCase):
         self.assertGreater(summary["windows"], 1)
         self.assertIn("compounded_alpha", summary)
         self.assertIn("positive_alpha_rate", summary)
+
+    def test_compare_walk_forward_across_tickers_returns_ticker_summary(self) -> None:
+        def fake_walk_forward(dataset, ticker, **kwargs):
+            compounded_alpha = {"AAA": 0.30, "BBB": -0.10}[ticker]
+            results = pd.DataFrame({"ticker": [ticker], "alpha": [compounded_alpha]})
+            summary = {
+                "windows": 3.0,
+                "mean_alpha": compounded_alpha / 3,
+                "median_alpha": 0.0,
+                "positive_alpha_rate": 2 / 3 if compounded_alpha > 0 else 1 / 3,
+                "compounded_strategy_return": 0.50 + compounded_alpha,
+                "compounded_buy_hold_return": 0.50,
+                "compounded_alpha": compounded_alpha,
+                "mean_auc_roc": 0.52,
+            }
+            return results, summary
+
+        with patch("ml_training.build_dataset_for_ticker", return_value=pd.DataFrame()):
+            with patch("ml_training.walk_forward_validation", side_effect=fake_walk_forward):
+                comparison, summary = compare_walk_forward_across_tickers(["AAA", "BBB"])
+
+        self.assertEqual(list(comparison["ticker"]), ["AAA", "BBB"])
+        self.assertAlmostEqual(summary["mean_compounded_alpha"], 0.10)
+        self.assertAlmostEqual(summary["median_compounded_alpha"], 0.10)
+        self.assertAlmostEqual(summary["positive_ticker_rate"], 0.5)
 
 
 if __name__ == "__main__":

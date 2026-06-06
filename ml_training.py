@@ -524,6 +524,56 @@ def walk_forward_validation(
     return results, summary
 
 
+def compare_walk_forward_across_tickers(
+    tickers: list[str],
+    model_key: str = "xgboost",
+    threshold: float = 0.25,
+    train_years: int = 5,
+    test_years: int = 1,
+    step_years: int = 1,
+    db_path: Path = DB_PATH,
+) -> tuple[pd.DataFrame, dict[str, float]]:
+    rows = []
+    for ticker in tickers:
+        dataset = build_dataset_for_ticker(ticker, db_path)
+        _, summary = walk_forward_validation(
+            dataset,
+            ticker,
+            model_key=model_key,
+            threshold=threshold,
+            train_years=train_years,
+            test_years=test_years,
+            step_years=step_years,
+        )
+        rows.append(
+            {
+                "ticker": ticker.upper(),
+                "model": MODEL_NAMES[model_key],
+                "threshold": threshold,
+                "windows": int(summary["windows"]),
+                "mean_alpha": summary["mean_alpha"],
+                "median_alpha": summary["median_alpha"],
+                "positive_alpha_rate": summary["positive_alpha_rate"],
+                "compounded_strategy_return": summary["compounded_strategy_return"],
+                "compounded_buy_hold_return": summary["compounded_buy_hold_return"],
+                "compounded_alpha": summary["compounded_alpha"],
+                "mean_auc_roc": summary["mean_auc_roc"],
+            }
+        )
+
+    comparison = pd.DataFrame(rows).sort_values("compounded_alpha", ascending=False, ignore_index=True)
+    summary = {
+        "mean_alpha": float(comparison["mean_alpha"].mean()),
+        "median_alpha": float(comparison["mean_alpha"].median()),
+        "mean_compounded_alpha": float(comparison["compounded_alpha"].mean()),
+        "median_compounded_alpha": float(comparison["compounded_alpha"].median()),
+        "positive_ticker_rate": float((comparison["compounded_alpha"] > 0).mean()),
+        "mean_positive_window_rate": float(comparison["positive_alpha_rate"].mean()),
+        "mean_auc_roc": float(comparison["mean_auc_roc"].mean()),
+    }
+    return comparison, summary
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train ML models for next-day stock direction prediction.")
     parser.add_argument("ticker", nargs="?", default="AAPL", help="Ticker symbol, for example: AAPL")
@@ -553,6 +603,42 @@ def build_parser() -> argparse.ArgumentParser:
 if __name__ == "__main__":
     args = build_parser().parse_args()
     if args.compare:
+        if args.walk_forward:
+            comparison, summary = compare_walk_forward_across_tickers(
+                args.compare,
+                model_key=args.model,
+                threshold=args.threshold,
+                train_years=args.train_years,
+                test_years=args.test_years,
+                step_years=args.step_years,
+                db_path=args.db,
+            )
+            print(f"{args.model} walk-forward comparison at threshold {args.threshold:.0%}")
+            print(
+                comparison.to_string(
+                    index=False,
+                    formatters={
+                        "threshold": "{:.0%}".format,
+                        "mean_alpha": "{:.2%}".format,
+                        "median_alpha": "{:.2%}".format,
+                        "positive_alpha_rate": "{:.2%}".format,
+                        "compounded_strategy_return": "{:.2%}".format,
+                        "compounded_buy_hold_return": "{:.2%}".format,
+                        "compounded_alpha": "{:.2%}".format,
+                        "mean_auc_roc": "{:.3f}".format,
+                    },
+                )
+            )
+            print("\nSummary:")
+            print(f"Mean Alpha: {summary['mean_alpha']:.2%}")
+            print(f"Median Alpha: {summary['median_alpha']:.2%}")
+            print(f"Mean Compounded Alpha: {summary['mean_compounded_alpha']:.2%}")
+            print(f"Median Compounded Alpha: {summary['median_compounded_alpha']:.2%}")
+            print(f"Positive Ticker Rate: {summary['positive_ticker_rate']:.2%}")
+            print(f"Mean Positive Window Rate: {summary['mean_positive_window_rate']:.2%}")
+            print(f"Mean AUC ROC: {summary['mean_auc_roc']:.3f}")
+            raise SystemExit(0)
+
         comparison, summary = compare_model_across_tickers(
             args.compare,
             model_key=args.model,

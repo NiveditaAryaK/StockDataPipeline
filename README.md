@@ -172,6 +172,12 @@ python ml_training.py AAPL --model xgboost --walk-forward --threshold 0.30 --tra
 
 This trains on rolling calendar-year windows and tests only on the next future year.
 
+Run walk-forward validation across tickers:
+
+```bash
+python ml_training.py --model xgboost --walk-forward --compare AAPL MSFT NVDA AMZN GOOGL META SPY TSLA --threshold 0.30 --train-years 5 --test-years 1
+```
+
 Current ML metrics:
 
 - Accuracy

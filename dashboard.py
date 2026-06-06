@@ -9,7 +9,7 @@ import streamlit as st
 from backtest import run_rsi_parameter_sweep, run_strategy_backtest, run_strategy_comparison
 from main import DB_PATH, load_prices, run_pipeline
 from ml_dataset import build_dataset_for_ticker
-from ml_training import MODEL_TRAINERS, compare_model_across_tickers, walk_forward_validation
+from ml_training import MODEL_TRAINERS, compare_model_across_tickers, compare_walk_forward_across_tickers, walk_forward_validation
 from paper_trading import run_paper_trading_simulation
 from research_agent import ExperimentStore, ResearchAgent
 from strategies import STRATEGY_LABELS, build_strategy
@@ -171,7 +171,7 @@ else:
 
 st.subheader("ML Walk-Forward Validation")
 with st.container():
-    walk_cols = st.columns(5)
+    walk_cols = st.columns(6)
     walk_model = walk_cols[0].selectbox(
         "Walk Model",
         list(MODEL_TRAINERS),
@@ -183,7 +183,8 @@ with st.container():
     walk_threshold = walk_cols[1].selectbox("Walk Threshold", [0.25, 0.30, 0.35, 0.40, 0.45, 0.50], index=1)
     walk_train_years = walk_cols[2].number_input("Train Years", min_value=2, max_value=8, value=5, step=1)
     walk_test_years = walk_cols[3].number_input("Test Years", min_value=1, max_value=3, value=1, step=1)
-    run_walk_forward = walk_cols[4].button("Run Walk Forward", type="primary")
+    run_walk_forward = walk_cols[4].button("Run Ticker Walk", type="primary")
+    run_walk_compare = walk_cols[5].button("Run Multi Walk", type="primary")
 
 if run_walk_forward:
     with st.spinner("Running rolling train/test windows..."):
@@ -199,21 +200,61 @@ if run_walk_forward:
     st.session_state["walk_results"] = walk_results
     st.session_state["walk_summary"] = walk_summary
     st.session_state["walk_ticker"] = selected_ticker
+    st.session_state["walk_mode"] = "single"
+
+if run_walk_compare:
+    with st.spinner("Running walk-forward validation across selected tickers..."):
+        walk_results, walk_summary = compare_walk_forward_across_tickers(
+            selected_tickers,
+            model_key=walk_model,
+            threshold=walk_threshold,
+            train_years=int(walk_train_years),
+            test_years=int(walk_test_years),
+        )
+    st.session_state["walk_results"] = walk_results
+    st.session_state["walk_summary"] = walk_summary
+    st.session_state["walk_ticker"] = "Multiple"
+    st.session_state["walk_mode"] = "multi"
 
 walk_results = st.session_state.get("walk_results")
 walk_summary = st.session_state.get("walk_summary")
+walk_mode = st.session_state.get("walk_mode", "single")
 if walk_results is not None and walk_summary is not None:
     walk_metric_cols = st.columns(5)
-    walk_metric_cols[0].metric("Windows", f"{walk_summary['windows']:.0f}")
-    walk_metric_cols[1].metric("Mean Alpha", f"{walk_summary['mean_alpha'] * 100:.2f}%")
-    walk_metric_cols[2].metric("Median Alpha", f"{walk_summary['median_alpha'] * 100:.2f}%")
-    walk_metric_cols[3].metric("Positive Windows", f"{walk_summary['positive_alpha_rate'] * 100:.2f}%")
-    walk_metric_cols[4].metric("Compounded Alpha", f"{walk_summary['compounded_alpha'] * 100:.2f}%")
+    if walk_mode == "multi":
+        walk_metric_cols[0].metric("Mean Alpha", f"{walk_summary['mean_alpha'] * 100:.2f}%")
+        walk_metric_cols[1].metric("Median Alpha", f"{walk_summary['median_alpha'] * 100:.2f}%")
+        walk_metric_cols[2].metric("Mean Comp Alpha", f"{walk_summary['mean_compounded_alpha'] * 100:.2f}%")
+        walk_metric_cols[3].metric("Positive Tickers", f"{walk_summary['positive_ticker_rate'] * 100:.2f}%")
+        walk_metric_cols[4].metric("Mean AUC", f"{walk_summary['mean_auc_roc']:.3f}")
+    else:
+        walk_metric_cols[0].metric("Windows", f"{walk_summary['windows']:.0f}")
+        walk_metric_cols[1].metric("Mean Alpha", f"{walk_summary['mean_alpha'] * 100:.2f}%")
+        walk_metric_cols[2].metric("Median Alpha", f"{walk_summary['median_alpha'] * 100:.2f}%")
+        walk_metric_cols[3].metric("Positive Windows", f"{walk_summary['positive_alpha_rate'] * 100:.2f}%")
+        walk_metric_cols[4].metric("Compounded Alpha", f"{walk_summary['compounded_alpha'] * 100:.2f}%")
 
     display_walk = walk_results.copy()
-    for column in ["threshold", "auc_roc", "win_rate", "total_return", "buy_hold_return", "alpha", "max_drawdown"]:
-        display_walk[column] = (display_walk[column] * 100).round(2)
-    display_walk["sharpe_ratio"] = display_walk["sharpe_ratio"].round(2)
+    for column in [
+        "threshold",
+        "auc_roc",
+        "win_rate",
+        "total_return",
+        "buy_hold_return",
+        "alpha",
+        "max_drawdown",
+        "mean_alpha",
+        "median_alpha",
+        "positive_alpha_rate",
+        "compounded_strategy_return",
+        "compounded_buy_hold_return",
+        "compounded_alpha",
+    ]:
+        if column in display_walk.columns:
+            display_walk[column] = (display_walk[column] * 100).round(2)
+    for column in ["sharpe_ratio", "mean_auc_roc"]:
+        if column in display_walk.columns:
+            display_walk[column] = display_walk[column].round(2)
     st.dataframe(display_walk, width="stretch")
 else:
     st.info("Run walk-forward validation to test whether an ML signal survives across future time windows.")
