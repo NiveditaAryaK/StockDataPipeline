@@ -164,6 +164,14 @@ python ml_training.py --model xgboost --compare AAPL MSFT NVDA META AMZN GOOGL S
 
 This prints ticker-level return, buy-and-hold return, alpha, and summary alpha statistics.
 
+Run walk-forward validation:
+
+```bash
+python ml_training.py AAPL --model xgboost --walk-forward --threshold 0.30 --train-years 5 --test-years 1
+```
+
+This trains on rolling calendar-year windows and tests only on the next future year.
+
 Current ML metrics:
 
 - Accuracy

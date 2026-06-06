@@ -16,6 +16,11 @@ from main import DB_PATH
 from ml_dataset import FEATURE_COLUMNS, build_dataset_for_ticker
 
 TRADING_DAYS_PER_YEAR = 252
+MODEL_NAMES = {
+    "logistic": "Logistic Regression",
+    "random_forest": "Random Forest",
+    "xgboost": "XGBoost",
+}
 
 
 @dataclass(frozen=True)
@@ -86,17 +91,11 @@ def train_logistic_regression(
     buy_threshold: float = 0.55,
     sell_threshold: float = 0.45,
 ) -> MLTrainingResult:
-    pipeline = Pipeline(
-        steps=[
-            ("scaler", StandardScaler()),
-            ("model", LogisticRegression(max_iter=1000)),
-        ]
-    )
     return train_classifier(
         dataset=dataset,
         ticker=ticker,
-        model_name="Logistic Regression",
-        pipeline=pipeline,
+        model_name=MODEL_NAMES["logistic"],
+        pipeline=build_model_pipeline("logistic"),
         feature_columns=feature_columns,
         test_size=test_size,
         buy_threshold=buy_threshold,
@@ -112,24 +111,11 @@ def train_random_forest(
     buy_threshold: float = 0.55,
     sell_threshold: float = 0.45,
 ) -> MLTrainingResult:
-    pipeline = Pipeline(
-        steps=[
-            (
-                "model",
-                RandomForestClassifier(
-                    n_estimators=300,
-                    min_samples_leaf=5,
-                    random_state=42,
-                    n_jobs=-1,
-                ),
-            ),
-        ]
-    )
     return train_classifier(
         dataset=dataset,
         ticker=ticker,
-        model_name="Random Forest",
-        pipeline=pipeline,
+        model_name=MODEL_NAMES["random_forest"],
+        pipeline=build_model_pipeline("random_forest"),
         feature_columns=feature_columns,
         test_size=test_size,
         buy_threshold=buy_threshold,
@@ -145,28 +131,11 @@ def train_xgboost(
     buy_threshold: float = 0.55,
     sell_threshold: float = 0.45,
 ) -> MLTrainingResult:
-    pipeline = Pipeline(
-        steps=[
-            (
-                "model",
-                XGBClassifier(
-                    n_estimators=200,
-                    max_depth=3,
-                    learning_rate=0.03,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    eval_metric="logloss",
-                    random_state=42,
-                    n_jobs=-1,
-                ),
-            ),
-        ]
-    )
     return train_classifier(
         dataset=dataset,
         ticker=ticker,
-        model_name="XGBoost",
-        pipeline=pipeline,
+        model_name=MODEL_NAMES["xgboost"],
+        pipeline=build_model_pipeline("xgboost"),
         feature_columns=feature_columns,
         test_size=test_size,
         buy_threshold=buy_threshold,
@@ -190,12 +159,34 @@ def train_classifier(
         raise ValueError(f"Dataset is missing required columns: {', '.join(missing_columns)}")
 
     train_df, test_df = chronological_split(dataset, test_size)
+    return train_classifier_on_frames(
+        train_df=train_df,
+        test_df=test_df,
+        ticker=ticker,
+        model_name=model_name,
+        pipeline=pipeline,
+        feature_columns=features,
+        buy_threshold=buy_threshold,
+        sell_threshold=sell_threshold,
+    )
+
+
+def train_classifier_on_frames(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    ticker: str,
+    model_name: str,
+    pipeline: Pipeline,
+    feature_columns: list[str],
+    buy_threshold: float = 0.55,
+    sell_threshold: float = 0.45,
+) -> MLTrainingResult:
     if train_df["target_up"].nunique() < 2:
         raise ValueError("Training data needs both up and down examples.")
 
-    x_train = train_df[features]
+    x_train = train_df[feature_columns]
     y_train = train_df["target_up"]
-    x_test = test_df[features]
+    x_test = test_df[feature_columns]
     y_test = test_df["target_up"]
 
     pipeline.fit(x_train, y_train)
@@ -206,7 +197,7 @@ def train_classifier(
     if y_test.nunique() == 2:
         auc_roc = float(roc_auc_score(y_test, probabilities_up))
 
-    latest_probability_up = float(pipeline.predict_proba(dataset.sort_values("date")[features].tail(1))[:, 1][0])
+    latest_probability_up = float(pipeline.predict_proba(test_df.sort_values("date")[feature_columns].tail(1))[:, 1][0])
     latest_signal = probability_to_signal(latest_probability_up, buy_threshold, sell_threshold)
 
     predictions = test_df[["ticker", "date", "close", "tomorrow_close", "target_up"]].copy()
@@ -217,7 +208,7 @@ def train_classifier(
     )
     signal_rates = predictions["signal"].value_counts(normalize=True)
 
-    feature_importance = build_feature_importance(pipeline, features)
+    feature_importance = build_feature_importance(pipeline, feature_columns)
     probability_summary = pd.Series(probabilities_up).quantile([0, 0.25, 0.75, 1])
     threshold_sweep = build_threshold_sweep(probabilities_up, y_test)
     threshold_backtest = build_threshold_backtest(test_df, probabilities_up)
@@ -254,6 +245,52 @@ def train_classifier(
         threshold_backtest=threshold_backtest,
         pipeline=pipeline,
     )
+
+
+def build_model_pipeline(model_key: str) -> Pipeline:
+    if model_key == "logistic":
+        return Pipeline(
+            steps=[
+                ("scaler", StandardScaler()),
+                ("model", LogisticRegression(max_iter=1000)),
+            ]
+        )
+
+    if model_key == "random_forest":
+        return Pipeline(
+            steps=[
+                (
+                    "model",
+                    RandomForestClassifier(
+                        n_estimators=300,
+                        min_samples_leaf=5,
+                        random_state=42,
+                        n_jobs=-1,
+                    ),
+                ),
+            ]
+        )
+
+    if model_key == "xgboost":
+        return Pipeline(
+            steps=[
+                (
+                    "model",
+                    XGBClassifier(
+                        n_estimators=200,
+                        max_depth=3,
+                        learning_rate=0.03,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        eval_metric="logloss",
+                        random_state=42,
+                        n_jobs=-1,
+                    ),
+                ),
+            ]
+        )
+
+    raise ValueError(f"Unsupported model '{model_key}'. Choose from: {', '.join(sorted(MODEL_NAMES))}")
 
 
 def build_feature_importance(pipeline: Pipeline, features: list[str]) -> pd.DataFrame:
@@ -400,6 +437,93 @@ def compare_model_across_tickers(
     return comparison, summary
 
 
+def walk_forward_validation(
+    dataset: pd.DataFrame,
+    ticker: str,
+    model_key: str = "xgboost",
+    threshold: float = 0.25,
+    train_years: int = 5,
+    test_years: int = 1,
+    step_years: int = 1,
+    feature_columns: list[str] | None = None,
+) -> tuple[pd.DataFrame, dict[str, float]]:
+    if model_key not in MODEL_NAMES:
+        raise ValueError(f"Unsupported model '{model_key}'. Choose from: {', '.join(sorted(MODEL_NAMES))}")
+    if train_years < 1 or test_years < 1 or step_years < 1:
+        raise ValueError("train_years, test_years, and step_years must be positive integers.")
+
+    features = feature_columns or FEATURE_COLUMNS
+    data = dataset.sort_values("date").reset_index(drop=True)
+    data["year"] = pd.to_datetime(data["date"]).dt.year
+    first_year = int(data["year"].min())
+    last_year = int(data["year"].max())
+    rows = []
+
+    for start_year in range(first_year, last_year - train_years - test_years + 2, step_years):
+        train_start_year = start_year
+        train_end_year = start_year + train_years - 1
+        test_start_year = train_end_year + 1
+        test_end_year = test_start_year + test_years - 1
+
+        train_df = data[(data["year"] >= train_start_year) & (data["year"] <= train_end_year)].drop(columns=["year"])
+        test_df = data[(data["year"] >= test_start_year) & (data["year"] <= test_end_year)].drop(columns=["year"])
+        if train_df.empty or test_df.empty or train_df["target_up"].nunique() < 2:
+            continue
+
+        result = train_classifier_on_frames(
+            train_df=train_df,
+            test_df=test_df,
+            ticker=ticker,
+            model_name=MODEL_NAMES[model_key],
+            pipeline=build_model_pipeline(model_key),
+            feature_columns=features,
+        )
+        threshold_rows = result.threshold_backtest[
+            (result.threshold_backtest["threshold"] - threshold).abs() < 0.000001
+        ]
+        if threshold_rows.empty:
+            raise ValueError(f"Threshold {threshold:.2f} is not available in the threshold backtest.")
+
+        threshold_result = threshold_rows.iloc[0]
+        rows.append(
+            {
+                "ticker": ticker.upper(),
+                "model": result.model_name,
+                "threshold": threshold,
+                "train_window": f"{train_start_year}-{train_end_year}",
+                "test_window": f"{test_start_year}-{test_end_year}",
+                "train_rows": result.train_rows,
+                "test_rows": result.test_rows,
+                "auc_roc": result.auc_roc,
+                "trades": int(threshold_result["trades"]),
+                "win_rate": threshold_result["win_rate"],
+                "total_return": float(threshold_result["total_return"]),
+                "buy_hold_return": float(threshold_result["buy_hold_return"]),
+                "alpha": float(threshold_result["alpha"]),
+                "max_drawdown": float(threshold_result["max_drawdown"]),
+                "sharpe_ratio": float(threshold_result["sharpe_ratio"]),
+            }
+        )
+
+    if not rows:
+        raise ValueError("No walk-forward windows could be created from this dataset.")
+
+    results = pd.DataFrame(rows)
+    compounded_strategy_return = float((1 + results["total_return"]).prod() - 1)
+    compounded_buy_hold_return = float((1 + results["buy_hold_return"]).prod() - 1)
+    summary = {
+        "windows": float(len(results)),
+        "mean_alpha": float(results["alpha"].mean()),
+        "median_alpha": float(results["alpha"].median()),
+        "positive_alpha_rate": float((results["alpha"] > 0).mean()),
+        "compounded_strategy_return": compounded_strategy_return,
+        "compounded_buy_hold_return": compounded_buy_hold_return,
+        "compounded_alpha": compounded_strategy_return - compounded_buy_hold_return,
+        "mean_auc_roc": float(results["auc_roc"].dropna().mean()) if results["auc_roc"].notna().any() else 0.0,
+    }
+    return results, summary
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train ML models for next-day stock direction prediction.")
     parser.add_argument("ticker", nargs="?", default="AAPL", help="Ticker symbol, for example: AAPL")
@@ -419,6 +543,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Compare the selected model across multiple tickers instead of printing one detailed ticker report",
     )
     parser.add_argument("--threshold", type=float, default=0.25, help="Threshold used for multi-ticker comparison")
+    parser.add_argument("--walk-forward", action="store_true", help="Run rolling calendar-year walk-forward validation")
+    parser.add_argument("--train-years", type=int, default=5, help="Training years per walk-forward window")
+    parser.add_argument("--test-years", type=int, default=1, help="Testing years per walk-forward window")
+    parser.add_argument("--step-years", type=int, default=1, help="Years to move forward after each window")
     return parser
 
 
@@ -455,6 +583,46 @@ if __name__ == "__main__":
         raise SystemExit(0)
 
     ml_dataset = build_dataset_for_ticker(args.ticker, args.db)
+    if args.walk_forward:
+        walk_results, walk_summary = walk_forward_validation(
+            ml_dataset,
+            args.ticker,
+            model_key=args.model,
+            threshold=args.threshold,
+            train_years=args.train_years,
+            test_years=args.test_years,
+            step_years=args.step_years,
+        )
+        print(
+            f"{args.model} walk-forward validation for {args.ticker.upper()} "
+            f"at threshold {args.threshold:.0%}"
+        )
+        print(
+            walk_results.to_string(
+                index=False,
+                formatters={
+                    "threshold": "{:.0%}".format,
+                    "auc_roc": lambda value: "n/a" if pd.isna(value) else f"{value:.3f}",
+                    "win_rate": lambda value: "n/a" if pd.isna(value) else f"{value:.2%}",
+                    "total_return": "{:.2%}".format,
+                    "buy_hold_return": "{:.2%}".format,
+                    "alpha": "{:.2%}".format,
+                    "max_drawdown": "{:.2%}".format,
+                    "sharpe_ratio": "{:.2f}".format,
+                },
+            )
+        )
+        print("\nSummary:")
+        print(f"Windows: {walk_summary['windows']:.0f}")
+        print(f"Mean Alpha: {walk_summary['mean_alpha']:.2%}")
+        print(f"Median Alpha: {walk_summary['median_alpha']:.2%}")
+        print(f"Positive Alpha Rate: {walk_summary['positive_alpha_rate']:.2%}")
+        print(f"Compounded Strategy Return: {walk_summary['compounded_strategy_return']:.2%}")
+        print(f"Compounded Buy & Hold Return: {walk_summary['compounded_buy_hold_return']:.2%}")
+        print(f"Compounded Alpha: {walk_summary['compounded_alpha']:.2%}")
+        print(f"Mean AUC ROC: {walk_summary['mean_auc_roc']:.3f}")
+        raise SystemExit(0)
+
     result = MODEL_TRAINERS[args.model](
         ml_dataset,
         args.ticker,

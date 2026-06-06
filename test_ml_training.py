@@ -15,6 +15,7 @@ from ml_training import (
     train_logistic_regression,
     train_random_forest,
     train_xgboost,
+    walk_forward_validation,
 )
 
 
@@ -201,6 +202,27 @@ class MLTrainingTests(unittest.TestCase):
         self.assertAlmostEqual(summary["mean_alpha"], 0.04)
         self.assertAlmostEqual(summary["median_alpha"], 0.04)
         self.assertAlmostEqual(summary["positive_alpha_rate"], 0.5)
+
+    def test_walk_forward_validation_returns_window_summary(self) -> None:
+        dataset = make_training_dataset(rows=365 * 8)
+
+        results, summary = walk_forward_validation(
+            dataset,
+            "TEST",
+            model_key="logistic",
+            threshold=0.25,
+            train_years=3,
+            test_years=1,
+            step_years=1,
+        )
+
+        self.assertGreater(len(results), 1)
+        self.assertIn("train_window", results.columns)
+        self.assertIn("test_window", results.columns)
+        self.assertIn("alpha", results.columns)
+        self.assertGreater(summary["windows"], 1)
+        self.assertIn("compounded_alpha", summary)
+        self.assertIn("positive_alpha_rate", summary)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,8 @@ import streamlit as st
 
 from backtest import run_rsi_parameter_sweep, run_strategy_backtest, run_strategy_comparison
 from main import DB_PATH, load_prices, run_pipeline
-from ml_training import MODEL_TRAINERS, compare_model_across_tickers
+from ml_dataset import build_dataset_for_ticker
+from ml_training import MODEL_TRAINERS, compare_model_across_tickers, walk_forward_validation
 from paper_trading import run_paper_trading_simulation
 from research_agent import ExperimentStore, ResearchAgent
 from strategies import STRATEGY_LABELS, build_strategy
@@ -167,6 +168,55 @@ if selected_tickers:
         st.info("Run the ML comparison to test alpha across the selected tickers.")
 else:
     st.info("Select at least one ticker for ML comparison.")
+
+st.subheader("ML Walk-Forward Validation")
+with st.container():
+    walk_cols = st.columns(5)
+    walk_model = walk_cols[0].selectbox(
+        "Walk Model",
+        list(MODEL_TRAINERS),
+        index=list(MODEL_TRAINERS).index("xgboost") if "xgboost" in MODEL_TRAINERS else 0,
+        format_func=lambda key: {"logistic": "Logistic Regression", "random_forest": "Random Forest", "xgboost": "XGBoost"}.get(
+            key, key
+        ),
+    )
+    walk_threshold = walk_cols[1].selectbox("Walk Threshold", [0.25, 0.30, 0.35, 0.40, 0.45, 0.50], index=1)
+    walk_train_years = walk_cols[2].number_input("Train Years", min_value=2, max_value=8, value=5, step=1)
+    walk_test_years = walk_cols[3].number_input("Test Years", min_value=1, max_value=3, value=1, step=1)
+    run_walk_forward = walk_cols[4].button("Run Walk Forward", type="primary")
+
+if run_walk_forward:
+    with st.spinner("Running rolling train/test windows..."):
+        walk_dataset = build_dataset_for_ticker(selected_ticker)
+        walk_results, walk_summary = walk_forward_validation(
+            walk_dataset,
+            selected_ticker,
+            model_key=walk_model,
+            threshold=walk_threshold,
+            train_years=int(walk_train_years),
+            test_years=int(walk_test_years),
+        )
+    st.session_state["walk_results"] = walk_results
+    st.session_state["walk_summary"] = walk_summary
+    st.session_state["walk_ticker"] = selected_ticker
+
+walk_results = st.session_state.get("walk_results")
+walk_summary = st.session_state.get("walk_summary")
+if walk_results is not None and walk_summary is not None:
+    walk_metric_cols = st.columns(5)
+    walk_metric_cols[0].metric("Windows", f"{walk_summary['windows']:.0f}")
+    walk_metric_cols[1].metric("Mean Alpha", f"{walk_summary['mean_alpha'] * 100:.2f}%")
+    walk_metric_cols[2].metric("Median Alpha", f"{walk_summary['median_alpha'] * 100:.2f}%")
+    walk_metric_cols[3].metric("Positive Windows", f"{walk_summary['positive_alpha_rate'] * 100:.2f}%")
+    walk_metric_cols[4].metric("Compounded Alpha", f"{walk_summary['compounded_alpha'] * 100:.2f}%")
+
+    display_walk = walk_results.copy()
+    for column in ["threshold", "auc_roc", "win_rate", "total_return", "buy_hold_return", "alpha", "max_drawdown"]:
+        display_walk[column] = (display_walk[column] * 100).round(2)
+    display_walk["sharpe_ratio"] = display_walk["sharpe_ratio"].round(2)
+    st.dataframe(display_walk, width="stretch")
+else:
+    st.info("Run walk-forward validation to test whether an ML signal survives across future time windows.")
 
 st.subheader("Daily Returns")
 st.bar_chart(data.set_index("date")["daily_return"])
