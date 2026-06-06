@@ -12,7 +12,8 @@ DB_PATH = Path("data/market_data.sqlite")
 
 def ensure_database(db_path: Path = DB_PATH) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
+    conn = sqlite3.connect(db_path)
+    try:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS stock_prices (
@@ -32,6 +33,9 @@ def ensure_database(db_path: Path = DB_PATH) -> None:
             )
             """
         )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def download_prices(ticker: str, period: str = "1y") -> pd.DataFrame:
@@ -86,7 +90,8 @@ def save_prices(frame: pd.DataFrame, db_path: Path = DB_PATH) -> None:
     frame = frame[columns].copy()
     frame["date"] = pd.to_datetime(frame["date"]).dt.strftime("%Y-%m-%d")
 
-    with sqlite3.connect(db_path) as conn:
+    conn = sqlite3.connect(db_path)
+    try:
         conn.executemany(
             """
             INSERT OR REPLACE INTO stock_prices (
@@ -97,6 +102,9 @@ def save_prices(frame: pd.DataFrame, db_path: Path = DB_PATH) -> None:
             """,
             frame.where(pd.notnull(frame), None).itertuples(index=False, name=None),
         )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def load_prices(ticker: str | None = None, db_path: Path = DB_PATH) -> pd.DataFrame:
@@ -108,8 +116,11 @@ def load_prices(ticker: str | None = None, db_path: Path = DB_PATH) -> pd.DataFr
         params = (ticker.upper(),)
     query += " ORDER BY ticker, date"
 
-    with sqlite3.connect(db_path) as conn:
+    conn = sqlite3.connect(db_path)
+    try:
         return pd.read_sql_query(query, conn, params=params, parse_dates=["date"])
+    finally:
+        conn.close()
 
 
 def run_pipeline(tickers: list[str], period: str, db_path: Path = DB_PATH) -> None:

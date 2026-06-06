@@ -90,6 +90,27 @@ It tracks:
 - Realized P&L
 - Unrealized P&L
 
+## Agent Quant Researcher
+
+Run the automated research agent:
+
+```bash
+python research_agent.py AAPL --period-years 5 --iterations 10
+```
+
+The agent:
+
+```text
+Strategy Generator -> Backtest Engine -> Metrics Analyzer -> Strategy Ranking
+```
+
+It saves experiments and results to `data/agent_research.sqlite`.
+
+Tables:
+
+- `experiments`
+- `experiment_results`
+
 ## Backtest Metrics
 
 - Total profit
@@ -129,6 +150,7 @@ The Bollinger strategy is mean-reversion based: it buys below the lower band and
 - `strategies.py`: reusable strategy classes and strategy registry
 - `backtest.py`: backtest engine, metrics, CLI
 - `research.py`: 5-year and 10-year batch research runner
+- `research_agent.py`: automated strategy generation, evaluation, and ranking
 - `paper_trading.py`: market feed, strategy engine, paper broker, portfolio
 - `dashboard.py`: Streamlit dashboard
 

@@ -9,6 +9,7 @@ import streamlit as st
 from backtest import run_rsi_parameter_sweep, run_strategy_backtest, run_strategy_comparison
 from main import DB_PATH, load_prices, run_pipeline
 from paper_trading import run_paper_trading_simulation
+from research_agent import ExperimentStore, ResearchAgent
 from strategies import STRATEGY_LABELS, build_strategy
 
 
@@ -173,6 +174,54 @@ else:
     else:
         st.subheader("Open Positions")
         st.dataframe(simulation.positions, width="stretch")
+
+st.subheader("Agent Quant Researcher")
+with st.container():
+    agent_cols = st.columns(4)
+    agent_period = agent_cols[0].selectbox("Agent Period", [1, 3, 5, 10], index=2, format_func=lambda years: f"{years}Y")
+    agent_iterations = agent_cols[1].number_input("Iterations", min_value=1, max_value=12, value=8, step=1)
+    agent_cash = agent_cols[2].number_input("Agent Cash", min_value=100.0, value=10_000.0, step=500.0)
+    run_agent = agent_cols[3].button("Run Research Agent", type="primary")
+
+agent_store = ExperimentStore()
+if run_agent:
+    with st.spinner("Generating, testing, analyzing, and ranking strategies..."):
+        agent_result = ResearchAgent(store=agent_store).run(
+            selected_ticker,
+            period_years=agent_period,
+            iterations=int(agent_iterations),
+            initial_cash=agent_cash,
+        )
+    st.session_state["agent_experiments"] = agent_result.experiments
+    st.session_state["agent_rankings"] = agent_result.rankings
+
+history = agent_store.load_history(selected_ticker, limit=100)
+current_experiment = history.iloc[0] if not history.empty else None
+status_cols = st.columns(3)
+status_cols[0].metric("Current Experiment", current_experiment["strategy_name"] if current_experiment is not None else "None")
+status_cols[1].metric("Status", current_experiment["status"] if current_experiment is not None else "Idle")
+status_cols[2].metric("Iteration Count", len(st.session_state.get("agent_experiments", history)))
+
+if "agent_experiments" in st.session_state:
+    st.subheader("Experiment Log")
+    display_agent_log = st.session_state["agent_experiments"].copy()
+    for column in ["return_pct", "drawdown", "alpha_pct", "win_rate", "score", "sharpe"]:
+        if column in display_agent_log.columns:
+            display_agent_log[column] = display_agent_log[column].map(lambda value: None if pd.isna(value) else round(value, 2))
+    st.dataframe(display_agent_log, width="stretch")
+
+    st.subheader("Best Strategies")
+    display_rankings = st.session_state["agent_rankings"].copy()
+    for column in ["return_pct", "drawdown", "alpha_pct", "win_rate", "score", "sharpe"]:
+        if column in display_rankings.columns:
+            display_rankings[column] = display_rankings[column].map(lambda value: None if pd.isna(value) else round(value, 2))
+    st.dataframe(display_rankings, width="stretch")
+elif not history.empty:
+    st.subheader("Recent Experiment History")
+    display_history = history.copy()
+    for column in ["return_pct", "drawdown", "alpha_pct", "win_rate", "score", "sharpe"]:
+        display_history[column] = display_history[column].map(lambda value: None if pd.isna(value) else round(value, 2))
+    st.dataframe(display_history, width="stretch")
 
 st.subheader("Stored Rows")
 st.dataframe(data.sort_values("date", ascending=False), width="stretch")
