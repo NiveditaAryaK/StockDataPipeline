@@ -128,6 +128,36 @@ if selected_tickers:
             f"{ml_settings.get('threshold', ml_threshold) * 100:.0f}%",
         )
 
+        best_ml = ml_comparison.loc[ml_comparison["alpha"].idxmax()]
+        worst_ml = ml_comparison.loc[ml_comparison["alpha"].idxmin()]
+        highlight_cols = st.columns(2)
+        highlight_cols[0].metric(
+            "Best Ticker",
+            best_ml["ticker"],
+            delta=f"Alpha {best_ml['alpha'] * 100:.2f}%",
+        )
+        highlight_cols[1].metric(
+            "Worst Ticker",
+            worst_ml["ticker"],
+            delta=f"Alpha {worst_ml['alpha'] * 100:.2f}%",
+            delta_color="inverse",
+        )
+
+        alpha_pct = ml_comparison["alpha"] * 100
+        bin_width = 5
+        lower_bin = int(alpha_pct.min() // bin_width * bin_width)
+        upper_bin = int((alpha_pct.max() // bin_width + 1) * bin_width)
+        if lower_bin == upper_bin:
+            upper_bin += bin_width
+        bins = list(range(lower_bin, upper_bin + bin_width, bin_width))
+        alpha_bins = pd.cut(alpha_pct, bins=bins, include_lowest=True, right=False)
+        alpha_distribution = alpha_bins.value_counts().sort_index()
+        alpha_distribution.index = [
+            f"{interval.left:.0f}% to {interval.right:.0f}%" for interval in alpha_distribution.index
+        ]
+        st.subheader("Alpha Distribution")
+        st.bar_chart(pd.DataFrame({"Tickers": alpha_distribution}), height=260)
+
         display_ml = ml_comparison.copy()
         for column in ["threshold", "auc_roc", "win_rate", "total_return", "buy_hold_return", "alpha", "max_drawdown"]:
             display_ml[column] = (display_ml[column] * 100).round(2)
